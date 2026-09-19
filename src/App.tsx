@@ -74,29 +74,67 @@ export default function App(){
 
   async function createProfile(){
     if(!setupRole || !name.trim()) return;
+
+    setMessage('');
     setLoading(true);
+
     try{
       const user=await ensureAuth();
+
       let photoURL='';
       if(photo){
-        const storageRef=ref(storage,`profiles/${user.uid}/avatar-${Date.now()}`);
-        await uploadBytes(storageRef,photo);
-        photoURL=await getDownloadURL(storageRef);
+        try{
+          photoURL=await prepareProfilePhoto(photo);
+        }catch(err){
+          console.error('Profile photo processing failed',err);
+          setMessage('לא הצלחנו לעבד את התמונה. הפרופיל יישמר בלי תמונה.');
+        }
       }
+
       const code=randomCode();
       let familyId:string|undefined;
+
       if(setupRole==='parent'){
         familyId=randomId();
-        await setDoc(doc(db,'families',familyId),{createdAt:serverTimestamp(),ownerUid:user.uid});
-        await setDoc(doc(db,'families',familyId,'members',user.uid),{uid:user.uid,name:name.trim(),photoURL,role:'parent'});
+        await setDoc(doc(db,'families',familyId),{
+          createdAt:serverTimestamp(),
+          ownerUid:user.uid
+        });
+        await setDoc(doc(db,'families',familyId,'members',user.uid),{
+          uid:user.uid,
+          name:name.trim(),
+          photoURL,
+          role:'parent'
+        });
       }
-      const p:Profile={uid:user.uid,name:name.trim(),photoURL,role:setupRole,code,familyId};
+
+      const p:Profile={
+        uid:user.uid,
+        name:name.trim(),
+        photoURL,
+        role:setupRole,
+        code,
+        familyId
+      };
+
       await setDoc(doc(db,'users',user.uid),p);
       await setDoc(doc(db,'pairCodes',code),{
-        uid:user.uid,type:setupRole,familyId:familyId||null,name:p.name,photoURL:photoURL||'',createdAt:serverTimestamp()
+        uid:user.uid,
+        type:setupRole,
+        familyId:familyId||null,
+        name:p.name,
+        photoURL:photoURL||'',
+        createdAt:serverTimestamp()
       });
+
       setProfile(p);
-    }finally{setLoading(false);}
+    }catch(err){
+      console.error('Profile creation failed',err);
+      const detail=err instanceof Error ? err.message : '';
+      setMessage(`שמירת הפרופיל נכשלה${detail ? `: ${detail}` : '.'}`);
+    }finally{
+      setLoading(false);
+    }
   }
 
   async function connectCode(){
