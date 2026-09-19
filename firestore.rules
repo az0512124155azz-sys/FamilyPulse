@@ -24,10 +24,8 @@ service cloud.firestore {
     match /pairCodes/{code} {
       allow get: if signedIn();
       allow list: if false;
-
       allow create, update:
-        if signedIn()
-        && request.resource.data.uid == request.auth.uid;
+        if signedIn() && request.resource.data.uid == request.auth.uid;
     }
 
     match /childLinks/{uid} {
@@ -59,23 +57,15 @@ service cloud.firestore {
             (
               isParent(familyId)
               && request.resource.data.role == 'child'
-              && get(
-                /databases/$(database)/documents/pairCodes/$(request.resource.data.inviteCode)
-              ).data.uid == uid
-              && get(
-                /databases/$(database)/documents/pairCodes/$(request.resource.data.inviteCode)
-              ).data.type == 'child'
+              && get(/databases/$(database)/documents/pairCodes/$(request.resource.data.inviteCode)).data.uid == uid
+              && get(/databases/$(database)/documents/pairCodes/$(request.resource.data.inviteCode)).data.type == 'child'
             )
             ||
             (
               request.auth.uid == uid
               && request.resource.data.role == 'parent'
-              && get(
-                /databases/$(database)/documents/pairCodes/$(request.resource.data.inviteCode)
-              ).data.familyId == familyId
-              && get(
-                /databases/$(database)/documents/pairCodes/$(request.resource.data.inviteCode)
-              ).data.type == 'parent'
+              && get(/databases/$(database)/documents/pairCodes/$(request.resource.data.inviteCode)).data.familyId == familyId
+              && get(/databases/$(database)/documents/pairCodes/$(request.resource.data.inviteCode)).data.type == 'parent'
             )
           );
 
@@ -91,14 +81,13 @@ service cloud.firestore {
           );
       }
 
-      match /logoutEvents/{childUid} {
+      match /logoutEvents/{eventId} {
         allow read:
           if isFamilyMember(familyId);
 
         allow create, update:
           if signedIn()
-          && request.auth.uid == childUid
-          && request.resource.data.childUid == childUid
+          && request.resource.data.childUid == request.auth.uid
           && request.resource.data.familyId == familyId;
       }
     }
@@ -110,9 +99,7 @@ service cloud.firestore {
       allow create:
         if signedIn()
         && isParent(request.resource.data.familyId)
-        && exists(
-          /databases/$(database)/documents/families/$(request.resource.data.familyId)/members/$(childUid)
-        );
+        && exists(/databases/$(database)/documents/families/$(request.resource.data.familyId)/members/$(childUid));
 
       allow update:
         if signedIn() && (
