@@ -626,11 +626,43 @@ export default function App(){
         </div>
       </section>}
 
+      {alerts.length>0&&<section className="alertsPanel">
+        <div className="sectionTitle"><h2>התראות</h2><span>{alerts.length}</span></div>
+        <div className="alertList">
+          {alerts.map(alert=><article className="familyAlert" key={alert.id}>
+            <div className="grow">
+              <b>{alert.type==='exit_home'?`${alert.childName} יצא מהבית`:`${alert.childName} התנתק`}</b>
+              <span>{alert.createdAt?locationAge(alert.createdAt):'עכשיו'}</span>
+            </div>
+            {typeof alert.lat==='number'&&typeof alert.lng==='number'&&
+              <button className="locate" onClick={()=>window.open(`https://www.google.com/maps?q=${alert.lat},${alert.lng}`,'_blank','noopener,noreferrer')}>
+                <MapPin/> מיקום
+              </button>}
+          </article>)}
+        </div>
+      </section>}
+
       <section className="connectPanel">
         <div><h2><Plus/> הוספת ילד או הורה</h2><p>הקלד קוד. FamilyPulse מזהה אוטומטית אם זה ילד או הורה שותף.</p></div>
         <div className="codeInput"><input value={joinCode} onChange={e=>setJoinCode(e.target.value.toUpperCase())} maxLength={8} placeholder="AB12CD34"/><button onClick={connectCode}>חבר</button></div>
         {message&&<div className="toast">{message}</div>}
       </section>
+      <section className="homePanel">
+        <div className="homePanelHeader">
+          <div>
+            <h2><MapPin/> הבית</h2>
+            <p>{home?'הבית מוגדר. FamilyPulse מסמן לכל ילד אם הוא בבית או מחוץ לבית.':'עדיין לא הוגדר בית.'}</p>
+          </div>
+          <button className={settingHome?'primary compact':'secondary compact'} onClick={()=>setSettingHome(v=>!v)}>
+            <MapPin/> {settingHome?'לחץ על המפה כדי לבחור':'בחר בית על המפה'}
+          </button>
+        </div>
+        <label className="radiusControl">
+          <span>רדיוס הבית: {homeRadius} מטר</span>
+          <input type="range" min="50" max="500" step="25" value={homeRadius} onChange={e=>setHomeRadius(Number(e.target.value))}/>
+        </label>
+      </section>
+
       <section><div className="sectionTitle"><h2>הילדים</h2><span>{children.length}</span></div>
         {children.length===0?<div className="empty"><Baby/><h3>עוד אין ילדים מחוברים</h3><p>פתח FamilyPulse במכשיר הילד והקלד כאן את הקוד שלו.</p></div>:
         <div className="childrenGrid">{children.map(child=>{
@@ -645,7 +677,14 @@ export default function App(){
               </small>
               {childLocation&&<small>דיוק כ־{Math.round(childLocation.accuracy)} מ׳ · {childLocation.source==='precise'?'מדויק':'מהיר'}</small>}
             </div>
-            <button className="locate" onClick={e=>{e.stopPropagation();requestLocation(child)}}><LocateFixed/> רענן</button>
+            <div className="childActions">
+              {home&&<span className={child.homeStatus==='inside'?'homeBadge inside':'homeBadge outside'}>
+                {child.homeStatus==='inside'?'בבית':child.homeStatus==='outside'?'מחוץ לבית':'לא ידוע'}
+              </span>}
+              {canBuzzNow()&&child.homeStatus==='inside'&&
+                <button className="buzzButton" onClick={e=>{e.stopPropagation();sendBuzz(child)}}>🔔 צפצף</button>}
+              <button className="locate" onClick={e=>{e.stopPropagation();requestLocation(child)}}><LocateFixed/> רענן</button>
+            </div>
           </article>
         })}</div>}
       </section>
@@ -664,6 +703,8 @@ export default function App(){
           <MapContainer center={[locations[Object.keys(locations)[0]].lat,locations[Object.keys(locations)[0]].lng]} zoom={13} scrollWheelZoom className="map">
             <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
             <MapViewport childrenList={children} locations={locations} selected={selected} fitSignal={fitSignal}/>
+            <HomeClickHandler enabled={settingHome} onPick={saveHome}/>
+            {home&&<Circle center={[home.lat,home.lng]} radius={home.radiusMeters} pathOptions={{fillOpacity:0.08}}/>}
             {children.map((child,index)=>{
               const loc=locations[child.uid];
               if(!loc) return null;
