@@ -1,16 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc
 } from 'firebase/firestore';
-import { CircleMarker, MapContainer, TileLayer } from 'react-leaflet';
-import { Baby, Copy, LocateFixed, MapPin, Plus, ShieldCheck, Smartphone, Users } from 'lucide-react';
+import { CircleMarker, MapContainer, TileLayer, useMap } from 'react-leaflet';
+import { Baby, Copy, LocateFixed, MapPin, Plus, ShieldCheck, Smartphone, Users, Maximize2 } from 'lucide-react';
 import { auth, db, ensureAuth, firebaseReady } from './firebase';
+import { latLngBounds } from 'leaflet';
 import { prepareProfilePhoto } from './profilePhoto';
 
 type Role='parent'|'child';
 type Profile={uid:string;name:string;photoURL?:string;role:Role;code:string;familyId?:string};
 type Member={uid:string;name:string;photoURL?:string;role:Role;inviteCode?:string};
-type Location={lat:number;lng:number;accuracy:number;familyId:string;updatedAt?:{seconds:number}};
+type Location={lat:number;lng:number;accuracy:number;familyId:string;updatedAt?:{seconds:number};source?:'fast'|'precise'};
 
 const randomCode=()=>Math.random().toString(36).slice(2,6).toUpperCase()+Math.random().toString(36).slice(2,6).toUpperCase();
 const randomId=()=>crypto.randomUUID().replaceAll('-','').slice(0,20);
@@ -24,8 +25,12 @@ export default function App(){
   const [joinCode,setJoinCode]=useState('');
   const [members,setMembers]=useState<Member[]>([]);
   const [selected,setSelected]=useState<Member|null>(null);
-  const [location,setLocation]=useState<Location|null>(null);
+  const [locations,setLocations]=useState<Record<string,Location>>({});
+  const [updating,setUpdating]=useState<Record<string,boolean>>({});
+  const [fitSignal,setFitSignal]=useState(0);
   const [message,setMessage]=useState('');
+  const requestStartedAt=useRef<Record<string,number>>({});
+  const autoRequestedFamily=useRef<string>('');
 
   useEffect(()=>{(async()=>{
     if(!firebaseReady){setLoading(false);return;}
@@ -47,20 +52,57 @@ export default function App(){
   useEffect(()=>{
     if(!profile || profile.role!=='child') return;
     const reqRef=doc(db,'locationRequests',profile.uid);
+
     return onSnapshot(reqRef,async snap=>{
       const data=snap.data();
       if(!data || data.status!=='requested' || !data.familyId) return;
+
+      const getPosition=(options:PositionOptions)=>new Promise<GeolocationPosition>((resolve,reject)=>
+        navigator.geolocation.getCurrentPosition(resolve,reject,options)
+      );
+
       try{
-        const pos=await new Promise<GeolocationPosition>((resolve,reject)=>
-          navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:true,timeout:20000,maximumAge:0})
-        );
-        await setDoc(doc(db,'locations',profile.uid),{
-          lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy,
-          familyId:data.familyId,updatedAt:serverTimestamp()
-        });
-        await updateDoc(reqRef,{status:'completed',completedAt:serverTimestamp()});
-        setMessage('המיקום נשלח להורה בהצלחה.');
-      }catch{
+        let sentFast=false;
+
+        try{
+          const fast=await getPosition({enableHighAccuracy:false,timeout:5000,maximumAge:60000});
+          await setDoc(doc(db,'locations',profile.uid),{
+            lat:fast.coords.latitude,
+            lng:fast.coords.longitude,
+            accuracy:fast.coords.accuracy,
+            familyId:data.familyId,
+            source:'fast',
+            updatedAt:serverTimestamp()
+          });
+          sentFast=true;
+          await updateDoc(reqRef,{status:'refining',fastCompletedAt:serverTimestamp()});
+          setMessage('מיקום מהיר נשלח. משפר דיוק…');
+        }catch(err){
+          console.warn('Fast location unavailable',err);
+        }
+
+        try{
+          const precise=await getPosition({enableHighAccuracy:true,timeout:15000,maximumAge:0});
+          await setDoc(doc(db,'locations',profile.uid),{
+            lat:precise.coords.latitude,
+            lng:precise.coords.longitude,
+            accuracy:precise.coords.accuracy,
+            familyId:data.familyId,
+            source:'precise',
+            updatedAt:serverTimestamp()
+          });
+          await updateDoc(reqRef,{status:'completed',completedAt:serverTimestamp()});
+          setMessage('המיקום המדויק נשלח להורה.');
+        }catch(err){
+          if(sentFast){
+            await updateDoc(reqRef,{status:'completed',completedAt:serverTimestamp()});
+            setMessage('נשלח המיקום הזמין האחרון.');
+          }else{
+            throw err;
+          }
+        }
+      }catch(err){
+        console.error('Location request failed',err);
         await updateDoc(reqRef,{status:'failed',completedAt:serverTimestamp()});
         setMessage('לא ניתן לקבל מיקום. יש לאשר הרשאת מיקום בדפדפן.');
       }
@@ -68,9 +110,24 @@ export default function App(){
   },[profile]);
 
   useEffect(()=>{
-    if(!selected) {setLocation(null);return;}
-    return onSnapshot(doc(db,'locations',selected.uid),snap=>setLocation(snap.exists()?snap.data() as Location:null));
-  },[selected?.uid]);
+    if(profile?.role!=='parent' || children.length===0) return;
+
+    const unsubs=children.map(child=>
+      onSnapshot(doc(db,'locations',child.uid),snap=>{
+        if(!snap.exists()) return;
+        const next=snap.data() as Location;
+        setLocations(prev=>({...prev,[child.uid]:next}));
+
+        const started=requestStartedAt.current[child.uid]||0;
+        const updatedMs=next.updatedAt?.seconds ? next.updatedAt.seconds*1000 : 0;
+        if(started && updatedMs>=started-1500){
+          setUpdating(prev=>({...prev,[child.uid]:false}));
+        }
+      })
+    );
+
+    return ()=>unsubs.forEach(unsub=>unsub());
+  },[profile?.role, children.map(c=>c.uid).join('|')]);
 
   async function createProfile(){
     if(!setupRole || !name.trim()) return;
@@ -163,15 +220,35 @@ export default function App(){
     setJoinCode('');
   }
 
-  async function requestLocation(child:Member){
-    setSelected(child);setMessage('מבקש מיקום עדכני…');
+  const children=useMemo(()=>members.filter(m=>m.role==='child'),[members]);
+  const parents=useMemo(()=>members.filter(m=>m.role==='parent'),[members]);
+
+  async function requestLocation(child:Member,focus=true){
+    if(!profile?.familyId) return;
+    if(focus) setSelected(child);
+
+    requestStartedAt.current[child.uid]=Date.now();
+    setUpdating(prev=>({...prev,[child.uid]:true}));
+
     await setDoc(doc(db,'locationRequests',child.uid),{
-      childUid:child.uid,requestedBy:profile?.uid,familyId:profile?.familyId,status:'requested',requestedAt:serverTimestamp()
+      childUid:child.uid,
+      requestedBy:profile.uid,
+      familyId:profile.familyId,
+      status:'requested',
+      requestedAt:serverTimestamp()
     });
   }
 
-  const children=useMemo(()=>members.filter(m=>m.role==='child'),[members]);
-  const parents=useMemo(()=>members.filter(m=>m.role==='parent'),[members]);
+  useEffect(()=>{
+    if(profile?.role!=='parent' || !profile.familyId || children.length===0) return;
+    if(autoRequestedFamily.current===profile.familyId) return;
+
+    autoRequestedFamily.current=profile.familyId;
+    setMessage('מעדכן את המיקום של כל הילדים…');
+
+    Promise.allSettled(children.map(child=>requestLocation(child,false)))
+      .finally(()=>setMessage(''));
+  },[profile?.role,profile?.familyId,children.map(c=>c.uid).join('|')]);
 
   if(loading) return <Center><div className="loader"/><p>טוען את FamilyPulse…</p></Center>;
   if(!firebaseReady) return <Center><Logo/><h1>FamilyPulse</h1><p>יש להגדיר את משתני Firebase לפי הקובץ <b>.env.example</b>.</p></Center>;
@@ -214,14 +291,41 @@ export default function App(){
       </section>
       <section><div className="sectionTitle"><h2>הילדים</h2><span>{children.length}</span></div>
         {children.length===0?<div className="empty"><Baby/><h3>עוד אין ילדים מחוברים</h3><p>פתח FamilyPulse במכשיר הילד והקלד כאן את הקוד שלו.</p></div>:
-        <div className="childrenGrid">{children.map(child=><article className={selected?.uid===child.uid?'childCard active':'childCard'} key={child.uid} onClick={()=>setSelected(child)}>
-          <div className="avatar">{child.photoURL?<img src={child.photoURL}/>:child.name[0]}</div><div className="grow"><b>{child.name}</b><span>{selected?.uid===child.uid&&location?'מיקום התקבל':'מוכן לבדיקה'}</span></div>
-          <button className="locate" onClick={e=>{e.stopPropagation();requestLocation(child)}}><LocateFixed/> מצא עכשיו</button>
-        </article>)}</div>}
+        <div className="childrenGrid">{children.map(child=>{
+          const childLocation=locations[child.uid];
+          return <article className={selected?.uid===child.uid?'childCard active':'childCard'} key={child.uid} onClick={()=>setSelected(child)}>
+            <div className="avatar">{child.photoURL?<img src={child.photoURL}/>:child.name[0]}</div>
+            <div className="grow">
+              <b>{child.name}</b>
+              <span>{updating[child.uid]?'מעדכן מיקום…':childLocation?locationAge(childLocation.updatedAt):'אין עדיין מיקום'}</span>
+              {childLocation&&<small>דיוק כ־{Math.round(childLocation.accuracy)} מ׳ · {childLocation.source==='precise'?'מדויק':'מהיר'}</small>}
+            </div>
+            <button className="locate" onClick={e=>{e.stopPropagation();requestLocation(child)}}><LocateFixed/> רענן</button>
+          </article>
+        })}</div>}
       </section>
-      {selected&&<section className="mapPanel">
-        <div className="mapHeader"><div><h2>{selected.name}</h2><p>{location?`דיוק משוער: ${Math.round(location.accuracy)} מטר`:'עדיין אין מיקום עדכני'}</p></div><button className="primary compact" onClick={()=>requestLocation(selected)}><LocateFixed/> רענן מיקום</button></div>
-        {location?<MapContainer center={[location.lat,location.lng]} zoom={17} scrollWheelZoom className="map"><TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/><CircleMarker center={[location.lat,location.lng]} radius={10} pathOptions={{fillOpacity:0.9}}/></MapContainer>:<div className="mapPlaceholder"><MapPin/><span>לחץ “מצא עכשיו” לקבלת מיקום</span></div>}
+      {children.length>0&&<section className="mapPanel">
+        <div className="mapHeader">
+          <div>
+            <h2>{selected?selected.name:'כל הילדים'}</h2>
+            <p>{selected&&locations[selected.uid]?`${locationAge(locations[selected.uid].updatedAt)} · דיוק כ־${Math.round(locations[selected.uid].accuracy)} מטר`:`${Object.keys(locations).length} מתוך ${children.length} מיקומים זמינים`}</p>
+          </div>
+          <div className="mapActions">
+            <button className="secondary compact" onClick={()=>{setSelected(null);setFitSignal(v=>v+1)}}><Maximize2/> הצג את כולם</button>
+            {selected&&<button className="primary compact" onClick={()=>requestLocation(selected)}><LocateFixed/> רענן מיקום</button>}
+          </div>
+        </div>
+        {Object.keys(locations).length>0?
+          <MapContainer center={[locations[Object.keys(locations)[0]].lat,locations[Object.keys(locations)[0]].lng]} zoom={13} scrollWheelZoom className="map">
+            <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
+            <MapViewport childrenList={children} locations={locations} selected={selected} fitSignal={fitSignal}/>
+            {children.map(child=>{
+              const loc=locations[child.uid];
+              if(!loc) return null;
+              return <CircleMarker key={child.uid} center={[loc.lat,loc.lng]} radius={selected?.uid===child.uid?13:10} pathOptions={{fillOpacity:0.9}} eventHandlers={{click:()=>setSelected(child)}}/>
+            })}
+          </MapContainer>:
+          <div className="mapPlaceholder"><MapPin/><span>ממתין למיקום הראשון של הילדים…</span></div>}
       </section>}
       <section className="share"><Users/><div className="grow"><h2>הורה שותף</h2><p>הורה נוסף בוחר “אני הורה” ומקליד את הקוד שלך.</p></div><CodeCard code={profile.code} compact/>
       </section>
@@ -236,3 +340,41 @@ function CodeCard({code,title,compact=false}:{code:string;title?:string;compact?
   return <div className={compact?'codeCard compactCode':'codeCard'}>{title&&<span>{title}</span>}<strong>{code}</strong><button onClick={copy} aria-label="העתקת קוד"><Copy/></button></div>
 }
 function TopBar({profile}:{profile:Profile}){return <header className="topbar"><div className="brand"><Logo/><b>FamilyPulse</b></div><div className="miniProfile"><span>{profile.role==='parent'?'הורה':'ילד/ה'}</span><div className="avatar tiny">{profile.photoURL?<img src={profile.photoURL}/>:profile.name[0]}</div></div></header>}
+
+
+function locationAge(updatedAt?:{seconds:number}){
+  if(!updatedAt?.seconds) return 'מיקום התקבל עכשיו';
+  const diff=Math.max(0,Date.now()-updatedAt.seconds*1000);
+  const seconds=Math.floor(diff/1000);
+  if(seconds<10) return 'עודכן עכשיו';
+  if(seconds<60) return `עודכן לפני ${seconds} שנ׳`;
+  const minutes=Math.floor(seconds/60);
+  if(minutes<60) return `עודכן לפני ${minutes} דק׳`;
+  const hours=Math.floor(minutes/60);
+  return `עודכן לפני ${hours} שע׳`;
+}
+
+function MapViewport({childrenList,locations,selected,fitSignal}:{childrenList:Member[];locations:Record<string,Location>;selected:Member|null;fitSignal:number}){
+  const map=useMap();
+
+  useEffect(()=>{
+    if(selected&&locations[selected.uid]){
+      const loc=locations[selected.uid];
+      map.setView([loc.lat,loc.lng],16,{animate:true});
+      return;
+    }
+
+    const points=childrenList
+      .map(child=>locations[child.uid])
+      .filter((loc):loc is Location=>Boolean(loc))
+      .map(loc=>[loc.lat,loc.lng] as [number,number]);
+
+    if(points.length===1){
+      map.setView(points[0],15,{animate:true});
+    }else if(points.length>1){
+      map.fitBounds(latLngBounds(points),{padding:[48,48],maxZoom:15,animate:true});
+    }
+  },[map,selected?.uid,fitSignal,childrenList.map(c=>c.uid).join('|'),Object.values(locations).map(l=>`${l.lat},${l.lng},${l.updatedAt?.seconds||0}`).join('|')]);
+
+  return null;
+}
