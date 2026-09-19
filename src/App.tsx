@@ -3,7 +3,7 @@ import { signOut } from 'firebase/auth';
 import {
   collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc
 } from 'firebase/firestore';
-import { CircleMarker, MapContainer, TileLayer, useMap } from 'react-leaflet';
+import { CircleMarker, MapContainer, TileLayer, Tooltip, useMap } from 'react-leaflet';
 import { Baby, Copy, LocateFixed, MapPin, Plus, ShieldCheck, Smartphone, Users, Maximize2 } from 'lucide-react';
 import { auth, db, ensureAuth, firebaseReady } from './firebase';
 import { latLngBounds } from 'leaflet';
@@ -326,10 +326,35 @@ export default function App(){
           <MapContainer center={[locations[Object.keys(locations)[0]].lat,locations[Object.keys(locations)[0]].lng]} zoom={13} scrollWheelZoom className="map">
             <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
             <MapViewport childrenList={children} locations={locations} selected={selected} fitSignal={fitSignal}/>
-            {children.map(child=>{
+            {children.map((child,index)=>{
               const loc=locations[child.uid];
               if(!loc) return null;
-              return <CircleMarker key={child.uid} center={[loc.lat,loc.lng]} radius={selected?.uid===child.uid?13:10} pathOptions={{fillOpacity:0.9}} eventHandlers={{click:()=>setSelected(child)}}/>
+
+              const directions:Array<'top'|'bottom'|'left'|'right'>=['top','bottom','left','right'];
+              const direction=directions[index%directions.length];
+
+              return <CircleMarker
+                key={child.uid}
+                center={[loc.lat,loc.lng]}
+                radius={selected?.uid===child.uid?13:10}
+                pathOptions={{fillOpacity:0.9}}
+                eventHandlers={{click:()=>setSelected(child)}}
+              >
+                <Tooltip
+                  permanent
+                  direction={direction}
+                  offset={[0,selected?.uid===child.uid?14:10]}
+                  opacity={1}
+                  className={selected?.uid===child.uid?'childMapTooltip selected':'childMapTooltip'}
+                >
+                  <button className="mapChildLabel" onClick={()=>setSelected(child)}>
+                    <span className="mapChildAvatar">
+                      {child.photoURL?<img src={child.photoURL} alt=""/>:<span>{child.name[0]}</span>}
+                    </span>
+                    <span className="mapChildName">{child.name}</span>
+                  </button>
+                </Tooltip>
+              </CircleMarker>
             })}
           </MapContainer>:
           <div className="mapPlaceholder"><MapPin/><span>ממתין למיקום הראשון של הילדים…</span></div>}
