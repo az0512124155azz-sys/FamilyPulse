@@ -3,14 +3,14 @@ import {
   collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { MapContainer, Marker, TileLayer } from 'react-leaflet';
+import { CircleMarker, MapContainer, TileLayer } from 'react-leaflet';
 import { Baby, Copy, LocateFixed, MapPin, Plus, ShieldCheck, Smartphone, Users } from 'lucide-react';
 import { auth, db, ensureAuth, firebaseReady, storage } from './firebase';
 
 type Role='parent'|'child';
 type Profile={uid:string;name:string;photoURL?:string;role:Role;code:string;familyId?:string};
 type Member={uid:string;name:string;photoURL?:string;role:Role;inviteCode?:string};
-type Location={lat:number;lng:number;accuracy:number;updatedAt?:{seconds:number}};
+type Location={lat:number;lng:number;accuracy:number;familyId:string;updatedAt?:{seconds:number}};
 
 const randomCode=()=>Math.random().toString(36).slice(2,6).toUpperCase()+Math.random().toString(36).slice(2,6).toUpperCase();
 const randomId=()=>crypto.randomUUID().replaceAll('-','').slice(0,20);
@@ -49,14 +49,14 @@ export default function App(){
     const reqRef=doc(db,'locationRequests',profile.uid);
     return onSnapshot(reqRef,async snap=>{
       const data=snap.data();
-      if(!data || data.status!=='requested') return;
+      if(!data || data.status!=='requested' || !data.familyId) return;
       try{
         const pos=await new Promise<GeolocationPosition>((resolve,reject)=>
           navigator.geolocation.getCurrentPosition(resolve,reject,{enableHighAccuracy:true,timeout:20000,maximumAge:0})
         );
         await setDoc(doc(db,'locations',profile.uid),{
           lat:pos.coords.latitude,lng:pos.coords.longitude,accuracy:pos.coords.accuracy,
-          updatedAt:serverTimestamp()
+          familyId:data.familyId,updatedAt:serverTimestamp()
         });
         await updateDoc(reqRef,{status:'completed',completedAt:serverTimestamp()});
         setMessage('המיקום נשלח להורה בהצלחה.');
@@ -128,7 +128,7 @@ export default function App(){
   async function requestLocation(child:Member){
     setSelected(child);setMessage('מבקש מיקום עדכני…');
     await setDoc(doc(db,'locationRequests',child.uid),{
-      childUid:child.uid,requestedBy:profile?.uid,status:'requested',requestedAt:serverTimestamp()
+      childUid:child.uid,requestedBy:profile?.uid,familyId:profile?.familyId,status:'requested',requestedAt:serverTimestamp()
     });
   }
 
@@ -182,7 +182,7 @@ export default function App(){
       </section>
       {selected&&<section className="mapPanel">
         <div className="mapHeader"><div><h2>{selected.name}</h2><p>{location?`דיוק משוער: ${Math.round(location.accuracy)} מטר`:'עדיין אין מיקום עדכני'}</p></div><button className="primary compact" onClick={()=>requestLocation(selected)}><LocateFixed/> רענן מיקום</button></div>
-        {location?<MapContainer center={[location.lat,location.lng]} zoom={17} scrollWheelZoom className="map"><TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/><Marker position={[location.lat,location.lng]}/></MapContainer>:<div className="mapPlaceholder"><MapPin/><span>לחץ “מצא עכשיו” לקבלת מיקום</span></div>}
+        {location?<MapContainer center={[location.lat,location.lng]} zoom={17} scrollWheelZoom className="map"><TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/><CircleMarker center={[location.lat,location.lng]} radius={10} pathOptions={{fillOpacity:0.9}}/></MapContainer>:<div className="mapPlaceholder"><MapPin/><span>לחץ “מצא עכשיו” לקבלת מיקום</span></div>}
       </section>}
       <section className="share"><Users/><div className="grow"><h2>הורה שותף</h2><p>הורה נוסף בוחר “אני הורה” ומקליד את הקוד שלך.</p></div><CodeCard code={profile.code} compact/>
       </section>
