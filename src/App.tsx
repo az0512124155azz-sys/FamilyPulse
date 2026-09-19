@@ -3,16 +3,17 @@ import { signOut } from 'firebase/auth';
 import {
   collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc
 } from 'firebase/firestore';
-import { CircleMarker, MapContainer, TileLayer, Tooltip, useMap } from 'react-leaflet';
+import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import { Baby, Copy, LocateFixed, MapPin, Plus, ShieldCheck, Smartphone, Users, Maximize2 } from 'lucide-react';
 import { auth, db, ensureAuth, firebaseReady } from './firebase';
-import { latLngBounds } from 'leaflet';
+import { divIcon, latLngBounds } from 'leaflet';
 import { prepareProfilePhoto } from './profilePhoto';
 
 type Role='parent'|'child';
 type Profile={uid:string;name:string;photoURL?:string;role:Role;code:string;familyId?:string};
-type Member={uid:string;name:string;photoURL?:string;role:Role;inviteCode?:string};
+type Member={uid:string;name:string;photoURL?:string;role:Role;inviteCode?:string;active?:boolean;disconnectedAt?:{seconds:number}};
 type Location={lat:number;lng:number;accuracy:number;familyId:string;updatedAt?:{seconds:number};source?:'fast'|'precise'};
+type LogoutEvent={childUid:string;name:string;photoURL?:string;familyId:string;loggedOutAt?:{seconds:number};lat?:number;lng?:number;accuracy?:number;hasLocation:boolean};
 
 const randomCode=()=>Math.random().toString(36).slice(2,6).toUpperCase()+Math.random().toString(36).slice(2,6).toUpperCase();
 const randomId=()=>crypto.randomUUID().replaceAll('-','').slice(0,20);
@@ -30,9 +31,10 @@ export default function App(){
   const [updating,setUpdating]=useState<Record<string,boolean>>({});
   const [fitSignal,setFitSignal]=useState(0);
   const [message,setMessage]=useState('');
+  const [logoutEvents,setLogoutEvents]=useState<LogoutEvent[]>([]);
   const requestStartedAt=useRef<Record<string,number>>({});
   const autoRequestedFamily=useRef<string>('');
-  const children=useMemo(()=>members.filter(m=>m.role==='child'),[members]);
+  const children=useMemo(()=>members.filter(m=>m.role==='child' && m.active!==false),[members]);
   const parents=useMemo(()=>members.filter(m=>m.role==='parent'),[members]);
 
   useEffect(()=>{(async()=>{
@@ -48,6 +50,9 @@ export default function App(){
     return onSnapshot(collection(db,'families',profile.familyId,'members'),snap=>{
       const next=snap.docs.map(d=>d.data() as Member);
       setMembers(next);
+      if(selected && !next.some(m=>m.uid===selected.uid && m.active!==false)){
+        setSelected(null);
+      }
     });
   },[profile?.familyId]);
 
