@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { signOut } from 'firebase/auth';
 import {
   collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc
 } from 'firebase/firestore';
@@ -31,6 +32,8 @@ export default function App(){
   const [message,setMessage]=useState('');
   const requestStartedAt=useRef<Record<string,number>>({});
   const autoRequestedFamily=useRef<string>('');
+  const children=useMemo(()=>members.filter(m=>m.role==='child'),[members]);
+  const parents=useMemo(()=>members.filter(m=>m.role==='parent'),[members]);
 
   useEffect(()=>{(async()=>{
     if(!firebaseReady){setLoading(false);return;}
@@ -45,7 +48,6 @@ export default function App(){
     return onSnapshot(collection(db,'families',profile.familyId,'members'),snap=>{
       const next=snap.docs.map(d=>d.data() as Member);
       setMembers(next);
-      if(!selected) setSelected(next.find(x=>x.role==='child')||null);
     });
   },[profile?.familyId]);
 
@@ -65,7 +67,7 @@ export default function App(){
         let sentFast=false;
 
         try{
-          const fast=await getPosition({enableHighAccuracy:false,timeout:5000,maximumAge:60000});
+          const fast=await getPosition({enableHighAccuracy:false,timeout:1500,maximumAge:300000});
           await setDoc(doc(db,'locations',profile.uid),{
             lat:fast.coords.latitude,
             lng:fast.coords.longitude,
@@ -82,7 +84,7 @@ export default function App(){
         }
 
         try{
-          const precise=await getPosition({enableHighAccuracy:true,timeout:15000,maximumAge:0});
+          const precise=await getPosition({enableHighAccuracy:true,timeout:8000,maximumAge:15000});
           await setDoc(doc(db,'locations',profile.uid),{
             lat:precise.coords.latitude,
             lng:precise.coords.longitude,
@@ -220,8 +222,13 @@ export default function App(){
     setJoinCode('');
   }
 
-  const children=useMemo(()=>members.filter(m=>m.role==='child'),[members]);
-  const parents=useMemo(()=>members.filter(m=>m.role==='parent'),[members]);
+  async function logout(){
+    try{
+      await signOut(auth);
+    }finally{
+      window.location.reload();
+    }
+  }
 
   async function requestLocation(child:Member,focus=true){
     if(!profile?.familyId) return;
@@ -269,7 +276,7 @@ export default function App(){
   </div>;
 
   if(profile.role==='child') return <div className="childPage">
-    <TopBar profile={profile}/>
+    <TopBar profile={profile} onLogout={logout}/>
     <main className="childMain">
       <div className="pulseOrb"><MapPin/></div>
       <h1>הכול מחובר</h1>
@@ -281,7 +288,7 @@ export default function App(){
   </div>;
 
   return <div className="appShell">
-    <TopBar profile={profile}/>
+    <TopBar profile={profile} onLogout={logout}/>
     <main className="dashboard">
       <section className="hero"><div><span className="eyebrow">המשפחה שלי</span><h1>שלום, {profile.name}</h1><p>{children.length} ילדים · {parents.length} הורים מחוברים</p></div><div className="avatar big">{profile.photoURL?<img src={profile.photoURL}/>:profile.name[0]}</div></section>
       <section className="connectPanel">
@@ -339,7 +346,7 @@ function CodeCard({code,title,compact=false}:{code:string;title?:string;compact?
   const copy=()=>navigator.clipboard.writeText(code);
   return <div className={compact?'codeCard compactCode':'codeCard'}>{title&&<span>{title}</span>}<strong>{code}</strong><button onClick={copy} aria-label="העתקת קוד"><Copy/></button></div>
 }
-function TopBar({profile}:{profile:Profile}){return <header className="topbar"><div className="brand"><Logo/><b>FamilyPulse</b></div><div className="miniProfile"><span>{profile.role==='parent'?'הורה':'ילד/ה'}</span><div className="avatar tiny">{profile.photoURL?<img src={profile.photoURL}/>:profile.name[0]}</div></div></header>}
+function TopBar({profile,onLogout}:{profile:Profile;onLogout:()=>void}){return <header className="topbar"><div className="brand"><Logo/><b>FamilyPulse</b></div><div className="miniProfile"><span>{profile.role==='parent'?'הורה':'ילד/ה'}</span><div className="avatar tiny">{profile.photoURL?<img src={profile.photoURL}/>:profile.name[0]}</div><button className="logoutButton" onClick={onLogout}>התנתק</button></div></header>}
 
 
 function locationAge(updatedAt?:{seconds:number}){
