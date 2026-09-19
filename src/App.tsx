@@ -440,12 +440,31 @@ export default function App(){
           eventData
         );
 
-        await updateDoc(doc(db,'families',familyId,'members',profile.uid),{
-          active:false,
-          disconnectedAt:serverTimestamp()
+        await setDoc(doc(db,'families',familyId,'alerts',randomId()),{
+          type:'logout',
+          childUid:profile.uid,
+          childName:profile.name,
+          lat:pos?.coords.latitude??null,
+          lng:pos?.coords.longitude??null,
+          createdAt:serverTimestamp()
         });
 
+        await deleteDoc(doc(db,'families',familyId,'members',profile.uid));
+        await deleteDoc(doc(db,'childLinks',profile.uid));
+        await deleteDoc(doc(db,'presence',profile.uid));
+        await deleteDoc(doc(db,'locations',profile.uid));
+        await deleteDoc(doc(db,'locationRequests',profile.uid));
+        await deleteDoc(doc(db,'pairCodes',profile.code));
+        await deleteDoc(doc(db,'users',profile.uid));
+
         localStorage.removeItem('familypulse.familyId');
+
+        if(auth.currentUser){
+          await deleteUser(auth.currentUser);
+        }
+
+        window.location.reload();
+        return;
       }catch(err){
         console.error('Child logout failed',err);
         const detail=err instanceof Error?err.message:'שגיאה לא ידועה';
