@@ -429,31 +429,32 @@ export default function App(){
               const loc=locations[child.uid];
               if(!loc) return null;
 
-              const directions:Array<'top'|'bottom'|'left'|'right'>=['top','bottom','left','right'];
-              const direction=directions[index%directions.length];
+              const position=getDisplayPosition(child,index,children,locations);
+              const markerIcon=createChildMarkerIcon(child,selected?.uid===child.uid);
 
-              return <CircleMarker
+              return <Marker
                 key={child.uid}
-                center={[loc.lat,loc.lng]}
-                radius={selected?.uid===child.uid?13:10}
-                pathOptions={{fillOpacity:0.9}}
+                position={position}
+                icon={markerIcon}
                 eventHandlers={{click:()=>setSelected(child)}}
+                zIndexOffset={selected?.uid===child.uid?1000:index}
               >
-                <Tooltip
-                  permanent
-                  direction={direction}
-                  offset={[0,selected?.uid===child.uid?14:10]}
-                  opacity={1}
-                  className={selected?.uid===child.uid?'childMapTooltip selected':'childMapTooltip'}
-                >
-                  <button className="mapChildLabel" onClick={()=>setSelected(child)}>
-                    <span className="mapChildAvatar">
-                      {child.photoURL?<img src={child.photoURL} alt=""/>:<span>{child.name[0]}</span>}
-                    </span>
-                    <span className="mapChildName">{child.name}</span>
-                  </button>
-                </Tooltip>
-              </CircleMarker>
+                <Popup>
+                  <div className="mapPopup" dir="rtl">
+                    <div className="mapPopupHeader">
+                      <div className="avatar">{child.photoURL?<img src={child.photoURL}/>:child.name[0]}</div>
+                      <div>
+                        <b>{child.name}</b>
+                        <small>{locationAge(loc.updatedAt)}</small>
+                      </div>
+                    </div>
+                    <p>דיוק משוער: {Math.round(loc.accuracy)} מטר</p>
+                    <button className="locate" onClick={()=>requestLocation(child)}>
+                      <LocateFixed/> רענן מיקום
+                    </button>
+                  </div>
+                </Popup>
+              </Marker>
             })}
           </MapContainer>:
           <div className="mapPlaceholder"><MapPin/><span>ממתין למיקום הראשון של הילדים…</span></div>}
@@ -483,6 +484,57 @@ function locationAge(updatedAt?:{seconds:number}){
   if(minutes<60) return `עודכן לפני ${minutes} דק׳`;
   const hours=Math.floor(minutes/60);
   return `עודכן לפני ${hours} שע׳`;
+}
+
+function createChildMarkerIcon(child:Member,selected:boolean){
+  const size=selected?56:48;
+  const image=child.photoURL
+    ? `<img src="${child.photoURL}" alt="">`
+    : `<span>${escapeHtml(child.name.trim().charAt(0)||'?')}</span>`;
+
+  return divIcon({
+    className:'childPhotoMarkerHost',
+    html:`<div class="childPhotoMarker${selected?' selected':''}">${image}</div>`,
+    iconSize:[size,size],
+    iconAnchor:[size/2,size/2],
+    popupAnchor:[0,-size/2]
+  });
+}
+
+function escapeHtml(value:string){
+  return value
+    .replaceAll('&','&amp;')
+    .replaceAll('<','&lt;')
+    .replaceAll('>','&gt;')
+    .replaceAll('"','&quot;')
+    .replaceAll("'","&#039;");
+}
+
+function getDisplayPosition(
+  child:Member,
+  index:number,
+  childrenList:Member[],
+  locations:Record<string,Location>
+):[number,number]{
+  const loc=locations[child.uid];
+  if(!loc) return [0,0];
+
+  let collisions=0;
+  for(let i=0;i<index;i++){
+    const other=locations[childrenList[i]?.uid];
+    if(!other) continue;
+    const veryClose=Math.abs(other.lat-loc.lat)<0.000025 && Math.abs(other.lng-loc.lng)<0.000025;
+    if(veryClose) collisions++;
+  }
+
+  if(collisions===0) return [loc.lat,loc.lng];
+
+  const angle=(collisions*137.5)*Math.PI/180;
+  const offset=0.000035*Math.ceil(collisions/2);
+  return [
+    loc.lat+Math.cos(angle)*offset,
+    loc.lng+Math.sin(angle)*offset
+  ];
 }
 
 function MapViewport({childrenList,locations,selected,fitSignal}:{childrenList:Member[];locations:Record<string,Location>;selected:Member|null;fitSignal:number}){
