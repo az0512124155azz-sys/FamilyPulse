@@ -187,6 +187,7 @@ export default function App(){
       <label>איך קוראים לך?</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="שם פרטי"/>
       <label>תמונה</label><input type="file" accept="image/*" onChange={e=>setPhoto(e.target.files?.[0]||null)}/>
       <button className="primary" disabled={!name.trim()} onClick={createProfile}>המשך</button>
+      {message&&<div className="toast">{message}</div>}
     </div>}
   </div>;
 
