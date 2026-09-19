@@ -14,6 +14,7 @@ type Profile={uid:string;name:string;photoURL?:string;role:Role;code:string;fami
 type Member={uid:string;name:string;photoURL?:string;role:Role;inviteCode?:string;active?:boolean;disconnectedAt?:{seconds:number}};
 type Location={lat:number;lng:number;accuracy:number;familyId:string;updatedAt?:{seconds:number};source?:'fast'|'precise'};
 type LogoutEvent={childUid:string;name:string;photoURL?:string;familyId:string;loggedOutAt?:{seconds:number};lat?:number;lng?:number;accuracy?:number;hasLocation:boolean};
+type Presence={online:boolean;lastSeen?:{seconds:number};familyId?:string};
 
 const randomCode=()=>Math.random().toString(36).slice(2,6).toUpperCase()+Math.random().toString(36).slice(2,6).toUpperCase();
 const randomId=()=>crypto.randomUUID().replaceAll('-','').slice(0,20);
@@ -32,6 +33,7 @@ export default function App(){
   const [fitSignal,setFitSignal]=useState(0);
   const [message,setMessage]=useState('');
   const [logoutEvents,setLogoutEvents]=useState<LogoutEvent[]>([]);
+  const [presence,setPresence]=useState<Record<string,Presence>>({});
   const requestStartedAt=useRef<Record<string,number>>({});
   const autoRequestedFamily=useRef<string>('');
   const children=useMemo(()=>members.filter(m=>m.role==='child' && m.active!==false),[members]);
@@ -79,6 +81,47 @@ export default function App(){
       },{merge:true})
     )).catch(()=>{});
   },[profile?.role,profile?.familyId,children.map(c=>c.uid).join('|')]);
+
+  useEffect(()=>{
+    if(!profile || profile.role!=='child') return;
+
+    let stopped=false;
+    let timer:number|undefined;
+
+    const publishPresence=async()=>{
+      try{
+        const link=await getDoc(doc(db,'childLinks',profile.uid));
+        let familyId=link.exists()?String(link.data().familyId||''):'';
+        if(!familyId){
+          const lastRequest=await getDoc(doc(db,'locationRequests',profile.uid));
+          if(lastRequest.exists()) familyId=String(lastRequest.data().familyId||'');
+        }
+
+        if(familyId){
+          await setDoc(doc(db,'presence',profile.uid),{
+            uid:profile.uid,
+            familyId,
+            online:true,
+            lastSeen:serverTimestamp()
+          },{merge:true});
+        }
+      }catch(err){
+        console.warn('Presence update failed',err);
+      }
+    };
+
+    publishPresence();
+    timer=window.setInterval(()=>{ if(!stopped) publishPresence(); },30000);
+
+    const onVisibility=()=>{ if(document.visibilityState==='visible') publishPresence(); };
+    document.addEventListener('visibilitychange',onVisibility);
+
+    return ()=>{
+      stopped=true;
+      if(timer) window.clearInterval(timer);
+      document.removeEventListener('visibilitychange',onVisibility);
+    };
+  },[profile?.uid,profile?.role]);
 
   useEffect(()=>{
     if(!profile || profile.role!=='child') return;
@@ -139,6 +182,19 @@ export default function App(){
       }
     });
   },[profile]);
+
+  useEffect(()=>{
+    if(profile?.role!=='parent' || children.length===0) return;
+
+    const unsubs=children.map(child=>
+      onSnapshot(doc(db,'presence',child.uid),snap=>{
+        if(!snap.exists()) return;
+        setPresence(prev=>({...prev,[child.uid]:snap.data() as Presence}));
+      })
+    );
+
+    return ()=>unsubs.forEach(unsub=>unsub());
+  },[profile?.role,children.map(c=>c.uid).join('|')]);
 
   useEffect(()=>{
     if(profile?.role!=='parent' || children.length===0) return;
@@ -291,6 +347,13 @@ export default function App(){
         }
 
         if(familyId){
+          await setDoc(doc(db,'presence',profile.uid),{
+            uid:profile.uid,
+            familyId,
+            online:false,
+            lastSeen:serverTimestamp()
+          },{merge:true});
+
           const pos=await getLogoutLocation();
           const eventData:Record<string,unknown>={
             childUid:profile.uid,
@@ -421,6 +484,9 @@ export default function App(){
             <div className="grow">
               <b>{child.name}</b>
               <span>{updating[child.uid]?'מעדכן מיקום…':childLocation?locationAge(childLocation.updatedAt):'אין עדיין מיקום'}</span>
+              <small className={isPresenceOnline(presence[child.uid])?'presenceOnline':'presenceOffline'}>
+                {presenceText(presence[child.uid])}
+              </small>
               {childLocation&&<small>דיוק כ־{Math.round(childLocation.accuracy)} מ׳ · {childLocation.source==='precise'?'מדויק':'מהיר'}</small>}
             </div>
             <button className="locate" onClick={e=>{e.stopPropagation();requestLocation(child)}}><LocateFixed/> רענן</button>
@@ -503,8 +569,19 @@ function locationAge(updatedAt?:{seconds:number}){
   return `עודכן לפני ${hours} שע׳`;
 }
 
+function isPresenceOnline(p?:Presence){
+  if(!p?.online || !p.lastSeen?.seconds) return false;
+  return Date.now()-p.lastSeen.seconds*1000 < 90000;
+}
+
+function presenceText(p?:Presence){
+  if(!p?.lastSeen?.seconds) return 'סטטוס חיבור לא ידוע';
+  if(isPresenceOnline(p)) return 'מחובר עכשיו';
+  return `לא מחובר · ${locationAge(p.lastSeen)}`;
+}
+
 function createChildMarkerIcon(child:Member,selected:boolean){
-  const size=selected?56:48;
+  const size=selected?38:32;
   const image=child.photoURL
     ? `<img src="${child.photoURL}" alt="">`
     : `<span>${escapeHtml(child.name.trim().charAt(0)||'?')}</span>`;
