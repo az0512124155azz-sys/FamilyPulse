@@ -42,12 +42,18 @@ service cloud.firestore {
 
     match /locationRequests/{childUid} {
       allow read: if signedIn() && request.auth.uid == childUid;
-      allow create, update: if signedIn();
+      allow create: if signedIn()
+        && isFamilyMember(request.resource.data.familyId)
+        && exists(/databases/$(database)/documents/families/$(request.resource.data.familyId)/members/$(childUid));
+      allow update: if signedIn() && (
+        request.auth.uid == childUid ||
+        isFamilyMember(request.resource.data.familyId)
+      );
     }
 
     match /locations/{childUid} {
       allow write: if signedIn() && request.auth.uid == childUid;
-      allow read: if signedIn();
+      allow read: if signedIn() && isFamilyMember(resource.data.familyId);
     }
   }
 }
