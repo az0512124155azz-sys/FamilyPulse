@@ -5,6 +5,7 @@ import {
 import { CircleMarker, MapContainer, TileLayer } from 'react-leaflet';
 import { Baby, Copy, LocateFixed, MapPin, Plus, ShieldCheck, Smartphone, Users } from 'lucide-react';
 import { auth, db, ensureAuth, firebaseReady } from './firebase';
+import { prepareProfilePhoto } from './profilePhoto';
 
 type Role='parent'|'child';
 type Profile={uid:string;name:string;photoURL?:string;role:Role;code:string;familyId?:string};
