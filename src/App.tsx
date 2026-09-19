@@ -355,8 +355,20 @@ export default function App(){
         if(alarmStopTimerRef.current) window.clearTimeout(alarmStopTimerRef.current);
         audio.pause();
         audio.currentTime=0;
-        audio.loop=true;
+        audio.loop=false;
         audio.volume=1;
+
+        const finishAlarm=()=>{
+          audio.pause();
+          audio.currentTime=0;
+          void updateDoc(doc(db,'buzzerCommands',profile.uid),{
+            status:'completed',
+            completedAt:serverTimestamp()
+          }).catch(()=>{});
+          setMessage('האזעקה הסתיימה.');
+        };
+
+        audio.onended=finishAlarm;
 
         await audio.play();
 
@@ -368,17 +380,10 @@ export default function App(){
           startedAt:serverTimestamp()
         });
 
-        setMessage('🔔 ההורה הפעיל אזעקה. היא תפעל עד דקה.');
+        setMessage('🔔 ההורה הפעיל אזעקה. היא תיעצר אוטומטית אחרי דקה.');
 
-        alarmStopTimerRef.current=window.setTimeout(()=>{
-          audio.pause();
-          audio.currentTime=0;
-          void updateDoc(doc(db,'buzzerCommands',profile.uid),{
-            status:'completed',
-            completedAt:serverTimestamp()
-          }).catch(()=>{});
-          setMessage('האזעקה הסתיימה.');
-        },60000);
+        // Backup only. The 60-second audio file ends by itself even if browser timers are throttled.
+        alarmStopTimerRef.current=window.setTimeout(finishAlarm,65000);
       }catch(err){
         console.error('Remote alarm failed',err);
         await updateDoc(doc(db,'buzzerCommands',profile.uid),{
@@ -645,14 +650,14 @@ export default function App(){
     try{
       let audio=alarmAudioRef.current;
       if(!audio){
-        audio=createWakeAlarmAudio();
+        audio=createWakeAlarmAudio(60);
         alarmAudioRef.current=audio;
       }
 
       if(alarmStopTimerRef.current) window.clearTimeout(alarmStopTimerRef.current);
       audio.pause();
       audio.currentTime=0;
-      audio.loop=true;
+      audio.loop=false;
       audio.volume=1;
 
       await audio.play();
@@ -1153,9 +1158,8 @@ function distanceMeters(lat1:number,lng1:number,lat2:number,lng2:number){
   return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-function createWakeAlarmAudio(){
+function createWakeAlarmAudio(seconds=60){
   const sampleRate=44100;
-  const seconds=4;
   const samples=sampleRate*seconds;
   const buffer=new ArrayBuffer(44+samples*2);
   const view=new DataView(buffer);
@@ -1199,7 +1203,7 @@ function createWakeAlarmAudio(){
   const url=URL.createObjectURL(new Blob([buffer],{type:'audio/wav'}));
   const audio=new Audio(url);
   audio.preload='auto';
-  audio.loop=true;
+  audio.loop=false;
   audio.volume=1;
   return audio;
 }
