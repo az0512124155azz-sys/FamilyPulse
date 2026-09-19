@@ -14,7 +14,7 @@ type Profile={uid:string;name:string;photoURL?:string;role:Role;code:string;fami
 type Member={uid:string;name:string;photoURL?:string;role:Role;inviteCode?:string;active?:boolean;disconnectedAt?:{seconds:number};homeStatus?:'inside'|'outside';homeStatusUpdatedAt?:{seconds:number}};
 type Location={lat:number;lng:number;accuracy:number;familyId:string;updatedAt?:{seconds:number};source?:'fast'|'precise'};
 type LogoutEvent={childUid:string;name:string;photoURL?:string;familyId:string;loggedOutAt?:{seconds:number};lat?:number;lng?:number;accuracy?:number;hasLocation:boolean};
-type Presence={online:boolean;lastSeen?:{seconds:number};familyId?:string};
+type Presence={online:boolean;lastSeen?:{seconds:number};familyId?:string;alarmReady?:boolean};
 type HomeConfig={lat:number;lng:number;radiusMeters:number;updatedAt?:{seconds:number}};
 type FamilyAlert={id:string;type:'exit_home'|'logout';childUid:string;childName:string;createdAt?:{seconds:number};lat?:number;lng?:number};
 type GeocodeResult={place_id:number;display_name:string;lat:string;lon:string};
@@ -218,6 +218,18 @@ export default function App(){
   },[profile?.role,profile?.familyId,children.map(c=>c.uid).join('|')]);
 
   useEffect(()=>{
+    if(profile?.role!=='child') return;
+
+    const wasEnabled=localStorage.getItem('familypulse.alarmEnabled')==='1';
+    if(wasEnabled){
+      const audio=createWakeAlarmAudio(60);
+      audio.load();
+      alarmAudioRef.current=audio;
+      setSoundReady(true);
+    }
+  },[profile?.uid,profile?.role]);
+
+  useEffect(()=>{
     if(!profile || profile.role!=='child') return;
 
     let stopped=false;
@@ -239,6 +251,7 @@ export default function App(){
               uid:profile.uid,
               familyId,
               online:true,
+              alarmReady:localStorage.getItem('familypulse.alarmEnabled')==='1',
               lastSeen:serverTimestamp()
             },{merge:true}),
             setDoc(doc(db,'users',profile.uid),{familyId},{merge:true}),
@@ -271,7 +284,9 @@ export default function App(){
       const data=snap.data();
       if(!data || !data.familyId) return;
 
-
+      if(data.alarmCommandId && data.alarmStatus==='requested'){
+        void handleIncomingAlarm(String(data.alarmCommandId));
+      }
 
       if(data.status!=='requested') return;
 
@@ -334,66 +349,16 @@ export default function App(){
   useEffect(()=>{
     if(profile?.role!=='child') return;
 
-    return onSnapshot(doc(db,'buzzerCommands',profile.uid),async snap=>{
+    return onSnapshot(doc(db,'buzzerCommands',profile.uid),snap=>{
       if(!snap.exists()) return;
-      const data=snap.data() as {commandId?:string;status?:string;familyId?:string};
-      if(data.status!=='requested' || !data.commandId || data.commandId===lastBuzzCommandRef.current) return;
-
-      lastBuzzCommandRef.current=data.commandId;
-
-      try{
-        await updateDoc(doc(db,'buzzerCommands',profile.uid),{
-          status:'received',
-          receivedAt:serverTimestamp()
-        });
-
-        const audio=alarmAudioRef.current;
-        if(!audio){
-          throw new Error('alarm-not-unlocked');
-        }
-
-        if(alarmStopTimerRef.current) window.clearTimeout(alarmStopTimerRef.current);
-        audio.pause();
-        audio.currentTime=0;
-        audio.loop=false;
-        audio.volume=1;
-
-        const finishAlarm=()=>{
-          audio.pause();
-          audio.currentTime=0;
-          void updateDoc(doc(db,'buzzerCommands',profile.uid),{
-            status:'completed',
-            completedAt:serverTimestamp()
-          }).catch(()=>{});
-          setMessage('האזעקה הסתיימה.');
-        };
-
-        audio.onended=finishAlarm;
-
-        await audio.play();
-
-        const vibrate=(navigator as Navigator & {vibrate?:(pattern:number|number[])=>boolean}).vibrate;
-        vibrate?.call(navigator,[800,150,800,150,1200,200,1200]);
-
-        await updateDoc(doc(db,'buzzerCommands',profile.uid),{
-          status:'playing',
-          startedAt:serverTimestamp()
-        });
-
-        setMessage('🔔 ההורה הפעיל אזעקה. היא תיעצר אוטומטית אחרי דקה.');
-
-        // Backup only. The 60-second audio file ends by itself even if browser timers are throttled.
-        alarmStopTimerRef.current=window.setTimeout(finishAlarm,65000);
-      }catch(err){
-        console.error('Remote alarm failed',err);
-        await updateDoc(doc(db,'buzzerCommands',profile.uid),{
-          status:'failed',
-          completedAt:serverTimestamp()
-        }).catch(()=>{});
-        setMessage('הפקודה הגיעה, אבל הצליל חסום. לחץ על “הפעל צלילי התראה” ונסה שוב.');
+      const data=snap.data() as {commandId?:string;status?:string};
+      if(data.status==='requested' && data.commandId){
+        void handleIncomingAlarm(data.commandId);
       }
     });
   },[profile?.uid,profile?.role]);
+
+
 
   useEffect(()=>{
     if(profile?.role!=='parent' || children.length===0) return;
@@ -646,6 +611,67 @@ export default function App(){
     setJoinCode('');
   }
 
+  async function handleIncomingAlarm(commandId:string){
+    if(!profile || profile.role!=='child' || !commandId) return;
+    if(commandId===lastBuzzCommandRef.current) return;
+
+    lastBuzzCommandRef.current=commandId;
+
+    const commandRef=doc(db,'buzzerCommands',profile.uid);
+    const locationRef=doc(db,'locationRequests',profile.uid);
+
+    try{
+      await Promise.allSettled([
+        updateDoc(commandRef,{status:'received',receivedAt:serverTimestamp()}),
+        updateDoc(locationRef,{alarmStatus:'received',alarmReceivedAt:serverTimestamp()})
+      ]);
+
+      let audio=alarmAudioRef.current;
+      if(!audio){
+        audio=createWakeAlarmAudio(60);
+        audio.load();
+        alarmAudioRef.current=audio;
+      }
+
+      if(alarmStopTimerRef.current) window.clearTimeout(alarmStopTimerRef.current);
+      audio.pause();
+      audio.currentTime=0;
+      audio.loop=false;
+      audio.volume=1;
+
+      const finishAlarm=()=>{
+        audio!.pause();
+        audio!.currentTime=0;
+        void Promise.allSettled([
+          updateDoc(commandRef,{status:'completed',completedAt:serverTimestamp()}),
+          updateDoc(locationRef,{alarmStatus:'completed',alarmCompletedAt:serverTimestamp()})
+        ]);
+        setMessage('האזעקה הסתיימה.');
+      };
+
+      audio.onended=finishAlarm;
+      await audio.play();
+
+      const vibrate=(navigator as Navigator & {vibrate?:(pattern:number|number[])=>boolean}).vibrate;
+      vibrate?.call(navigator,[900,120,900,120,1300,180,1300]);
+
+      await Promise.allSettled([
+        updateDoc(commandRef,{status:'playing',startedAt:serverTimestamp()}),
+        updateDoc(locationRef,{alarmStatus:'playing',alarmStartedAt:serverTimestamp()})
+      ]);
+
+      setMessage('🔔 ההורה הפעיל אזעקה. היא תיעצר אוטומטית אחרי דקה.');
+      alarmStopTimerRef.current=window.setTimeout(finishAlarm,65000);
+    }catch(err){
+      console.error('Remote alarm failed',err);
+      await Promise.allSettled([
+        updateDoc(commandRef,{status:'failed',completedAt:serverTimestamp()}),
+        updateDoc(locationRef,{alarmStatus:'failed',alarmCompletedAt:serverTimestamp()})
+      ]);
+      setMessage('הפקודה הגיעה, אבל הדפדפן חסם את הצליל. לחץ על “הפעל צלילי התראה” ונסה שוב.');
+    }
+  }
+
   async function enableAlertSound(){
     try{
       let audio=alarmAudioRef.current;
@@ -662,7 +688,19 @@ export default function App(){
 
       await audio.play();
       setSoundReady(true);
+      localStorage.setItem('familypulse.alarmEnabled','1');
       setMessage('משמיע בדיקת אזעקה של 8 שניות…');
+
+      const familyId=localStorage.getItem('familypulse.familyId')||'';
+      if(profile?.role==='child' && familyId){
+        void setDoc(doc(db,'presence',profile.uid),{
+          uid:profile.uid,
+          familyId,
+          online:true,
+          alarmReady:true,
+          lastSeen:serverTimestamp()
+        },{merge:true}).catch(()=>{});
+      }
 
       alarmStopTimerRef.current=window.setTimeout(()=>{
         audio?.pause();
@@ -728,16 +766,28 @@ export default function App(){
       : `להפעיל עכשיו אזעקה בטלפון של ${child.name}?`;
     if(!window.confirm(question)) return;
 
+    const commandId=randomId();
+
     try{
-      await setDoc(doc(db,'buzzerCommands',child.uid),{
-        commandId:randomId(),
-        childUid:child.uid,
-        familyId:profile.familyId,
-        requestedBy:profile.uid,
-        status:'requested',
-        testMode:testNow,
-        requestedAt:serverTimestamp()
-      });
+      await Promise.all([
+        setDoc(doc(db,'buzzerCommands',child.uid),{
+          commandId,
+          childUid:child.uid,
+          familyId:profile.familyId,
+          requestedBy:profile.uid,
+          status:'requested',
+          testMode:testNow,
+          requestedAt:serverTimestamp()
+        }),
+        setDoc(doc(db,'locationRequests',child.uid),{
+          childUid:child.uid,
+          familyId:profile.familyId,
+          requestedBy:profile.uid,
+          alarmCommandId:commandId,
+          alarmStatus:'requested',
+          alarmRequestedAt:serverTimestamp()
+        },{merge:true})
+      ]);
 
       setBuzzStatus(prev=>({...prev,[child.uid]:'requested'}));
       setMessage(`פקודת האזעקה נשלחה ל־${child.name}.`);
@@ -936,24 +986,34 @@ export default function App(){
         <div className="codeInput"><input value={joinCode} onChange={e=>setJoinCode(e.target.value.toUpperCase())} maxLength={8} placeholder="AB12CD34"/><button onClick={connectCode}>חבר</button></div>
         {message&&<div className="toast">{message}</div>}
       </section>
-      <section><div className="sectionTitle"><h2>הילדים</h2><span>{children.length}</span></div>
+      <section className="childrenSection"><div className="sectionTitle"><h2>הילדים</h2><span>{children.length}</span></div>
         {children.length===0?<div className="empty"><Baby/><h3>עוד אין ילדים מחוברים</h3><p>פתח FamilyPulse במכשיר הילד והקלד כאן את הקוד שלו.</p></div>:
         <div className="childrenGrid">{children.map(child=>{
           const childLocation=locations[child.uid];
+          const online=isPresenceOnline(presence[child.uid]);
+          const alarmState=buzzStatus[child.uid];
+
           return <article className={selected?.uid===child.uid?'childCard active':'childCard'} key={child.uid} onClick={()=>setSelected(child)}>
-            <div className="avatar">{child.photoURL?<img src={child.photoURL}/>:child.name[0]}</div>
-            <div className="grow">
-              <b>{child.name}</b>
-              <span>{updating[child.uid]?'מעדכן מיקום…':childLocation?locationAge(childLocation.updatedAt):'אין עדיין מיקום'}</span>
-              <small className={isPresenceOnline(presence[child.uid])?'presenceOnline':'presenceOffline'}>
-                {presenceText(presence[child.uid])}
-              </small>
-              {childLocation&&<small>דיוק כ־{Math.round(childLocation.accuracy)} מ׳ · {childLocation.source==='precise'?'מדויק':'מהיר'}</small>}
+            <div className="childCardTop">
+              <div className="avatar">{child.photoURL?<img src={child.photoURL}/>:child.name[0]}</div>
+              <div className="childCardInfo">
+                <div className="childNameRow">
+                  <b>{child.name}</b>
+                  <span className={online?'connectionDot online':'connectionDot'}>{online?'מחובר':'לא מחובר'}</span>
+                </div>
+                <span className="locationLine">{updating[child.uid]?'מעדכן מיקום…':childLocation?locationAge(childLocation.updatedAt):'אין עדיין מיקום'}</span>
+                {childLocation&&<small>דיוק כ־{Math.round(childLocation.accuracy)} מ׳ · {childLocation.source==='precise'?'מדויק':'מהיר'}</small>}
+              </div>
             </div>
-            <div className="childActions">
+
+            <div className="childCardMeta">
               {home&&<span className={child.homeStatus==='inside'?'homeBadge inside':'homeBadge outside'}>
-                {child.homeStatus==='inside'?'בבית':child.homeStatus==='outside'?'מחוץ לבית':'לא ידוע'}
+                {child.homeStatus==='inside'?'בבית':child.homeStatus==='outside'?'מחוץ לבית':'מיקום בית לא ידוע'}
               </span>}
+              {alarmState&&<span className={`alarmState ${alarmState}`}>{buzzStatusLabel(alarmState)}</span>}
+            </div>
+
+            <div className="childActions">
               <button
                 className={canBuzzNow()&&child.homeStatus==='inside'?'buzzButton':'buzzButton test'}
                 onClick={e=>{
@@ -964,8 +1024,7 @@ export default function App(){
               >
                 🔔 {canBuzzNow()&&child.homeStatus==='inside'?'צפצף':'בדיקת צפצוף'}
               </button>
-              <button className="locate" onClick={e=>{e.stopPropagation();requestLocation(child)}}><LocateFixed/> רענן</button>
-              {buzzStatus[child.uid]&&<small className="buzzStatus">{buzzStatusLabel(buzzStatus[child.uid])}</small>}
+              <button className="locate" onClick={e=>{e.stopPropagation();requestLocation(child)}}><LocateFixed/> רענן מיקום</button>
             </div>
           </article>
         })}</div>}
