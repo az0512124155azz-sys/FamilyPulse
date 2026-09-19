@@ -9,3 +9,6 @@
   .mapActions{width:100%}
   .mapActions .primary,.mapActions .secondary{flex:1;justify-content:center}
 }
+
+.logoutButton{border:1px solid #e2e8f0;background:#fff;color:#475569;border-radius:10px;padding:7px 10px;font-weight:800;font-size:12px}
+.logoutButton:hover{background:#f8fafc;color:#0f172a}
