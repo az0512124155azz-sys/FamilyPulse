@@ -109,6 +109,17 @@ service cloud.firestore {
         );
     }
 
+    match /presence/{childUid} {
+      allow read:
+        if signedIn()
+        && isFamilyMember(resource.data.familyId);
+
+      allow create, update:
+        if signedIn()
+        && request.auth.uid == childUid
+        && request.resource.data.uid == childUid;
+    }
+
     match /locations/{childUid} {
       allow write:
         if signedIn() && request.auth.uid == childUid;
