@@ -842,7 +842,7 @@ export default function App(){
             <MapViewport childrenList={children} locations={locations} selected={selected} fitSignal={fitSignal}/>
             {home&&<>
               <Circle center={[home.lat,home.lng]} radius={30} pathOptions={{fillOpacity:0.08}}/>
-              <Marker position={[home.lat,home.lng]} icon={createHomeMarkerIcon()} zIndexOffset={2000}/>
+              <Marker position={[home.lat,home.lng]} icon={createHomeMarkerIcon()} zIndexOffset={2000} interactive={false}/>
             </>}
             {children.map((child,index)=>{
               const loc=locations[child.uid];
@@ -944,7 +944,7 @@ export default function App(){
             <HomeClickHandler enabled onPick={(lat,lng)=>setHomeDraft({lat,lng,label:'נקודה שנבחרה במפה'})}/>
             {(homeDraft||home)&&<>
               <Circle center={[homeDraft?.lat??home!.lat,homeDraft?.lng??home!.lng]} radius={30} pathOptions={{fillOpacity:0.1}}/>
-              <Marker position={[homeDraft?.lat??home!.lat,homeDraft?.lng??home!.lng]} icon={createHomeMarkerIcon()} zIndexOffset={2000}/>
+              <Marker position={[homeDraft?.lat??home!.lat,homeDraft?.lng??home!.lng]} icon={createHomeMarkerIcon()} zIndexOffset={2000} interactive={false}/>
             </>}
           </MapContainer>
 
