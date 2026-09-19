@@ -11,7 +11,7 @@ import { prepareProfilePhoto } from './profilePhoto';
 
 type Role='parent'|'child';
 type Profile={uid:string;name:string;photoURL?:string;role:Role;code:string;familyId?:string};
-type Member={uid:string;name:string;photoURL?:string;role:Role;inviteCode?:string;active?:boolean;disconnectedAt?:{seconds:number}};
+type Member={uid:string;name:string;photoURL?:string;role:Role;inviteCode?:string;active?:boolean;disconnectedAt?:{seconds:number};homeStatus?:'inside'|'outside';homeStatusUpdatedAt?:{seconds:number}};
 type Location={lat:number;lng:number;accuracy:number;familyId:string;updatedAt?:{seconds:number};source?:'fast'|'precise'};
 type LogoutEvent={childUid:string;name:string;photoURL?:string;familyId:string;loggedOutAt?:{seconds:number};lat?:number;lng?:number;accuracy?:number;hasLocation:boolean};
 type Presence={online:boolean;lastSeen?:{seconds:number};familyId?:string};
@@ -231,7 +231,7 @@ export default function App(){
     if(profile?.role!=='parent' || children.length===0) return;
 
     const unsubs=children.map(child=>
-      onSnapshot(doc(db,'locations',child.uid),snap=>{
+      onSnapshot(doc(db,'locations',child.uid),async snap=>{
         if(!snap.exists()) return;
         const next=snap.data() as Location;
         setLocations(prev=>({...prev,[child.uid]:next}));
@@ -241,11 +241,34 @@ export default function App(){
         if(started && updatedMs>=started-1500){
           setUpdating(prev=>({...prev,[child.uid]:false}));
         }
+
+        if(profile?.familyId && home){
+          const distance=distanceMeters(next.lat,next.lng,home.lat,home.lng);
+          const newStatus:Member['homeStatus']=distance<=home.radiusMeters?'inside':'outside';
+
+          if(child.homeStatus!==newStatus){
+            await updateDoc(doc(db,'families',profile.familyId,'members',child.uid),{
+              homeStatus:newStatus,
+              homeStatusUpdatedAt:serverTimestamp()
+            });
+
+            if(child.homeStatus==='inside' && newStatus==='outside'){
+              await setDoc(doc(db,'families',profile.familyId,'alerts',randomId()),{
+                type:'exit_home',
+                childUid:child.uid,
+                childName:child.name,
+                lat:next.lat,
+                lng:next.lng,
+                createdAt:serverTimestamp()
+              });
+            }
+          }
+        }
       })
     );
 
     return ()=>unsubs.forEach(unsub=>unsub());
-  },[profile?.role, children.map(c=>c.uid).join('|')]);
+  },[profile?.role,profile?.familyId,children.map(c=>`${c.uid}:${c.homeStatus||''}`).join('|'),home?.lat,home?.lng,home?.radiusMeters]);
 
   async function createProfile(){
     if(!setupRole || !name.trim()) return;
