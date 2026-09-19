@@ -479,6 +479,7 @@ export default function App(){
         await deleteDoc(doc(db,'presence',profile.uid));
         await deleteDoc(doc(db,'locations',profile.uid));
         await deleteDoc(doc(db,'locationRequests',profile.uid));
+        await deleteDoc(doc(db,'buzzerCommands',profile.uid));
         await deleteDoc(doc(db,'pairCodes',profile.code));
         await deleteDoc(doc(db,'users',profile.uid));
 
