@@ -192,7 +192,10 @@ service cloud.firestore {
 
     match /buzzerCommands/{childUid} {
       allow read:
-        if signedIn() && request.auth.uid == childUid;
+        if signedIn() && (
+          request.auth.uid == childUid
+          || isParent(resource.data.familyId)
+        );
 
       allow create:
         if signedIn()
