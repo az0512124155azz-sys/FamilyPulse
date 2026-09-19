@@ -119,3 +119,21 @@
   .settingsModal{padding:16px}
   .settingsMap{height:300px}
 }
+
+.homeSearchRow{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;margin:12px 0}
+.homeSearchRow input{width:100%;border:1px solid #dbe3ed;border-radius:12px;padding:11px 12px;outline:none;background:#fff}
+.homeSearchRow input:focus{border-color:#38bdf8;box-shadow:0 0 0 3px #38bdf820}
+.addressResults{display:grid;gap:7px;margin:0 0 12px}
+.addressResult{width:100%;display:flex;align-items:flex-start;gap:8px;text-align:right;border:1px solid #e2e8f0;background:#fff;border-radius:12px;padding:10px 11px;color:#334155}
+.addressResult:hover{border-color:#38bdf8;background:#f8fdff}
+.addressResult svg{width:16px;flex:none;color:#0284c7;margin-top:2px}
+.addressResult span{font-size:12px;line-height:1.5}
+.settingsError{margin:0 0 10px;border:1px solid #fecaca;background:#fff1f2;color:#b91c1c;border-radius:12px;padding:9px 10px;font-size:12px}
+.testAlertSection{margin-top:14px}
+.testChildren{display:grid;gap:8px}
+.testBuzzButton{display:flex;align-items:center;gap:10px;width:100%;border:1px solid #fde68a;background:#fffbeb;color:#92400e;border-radius:14px;padding:10px 12px;font-weight:900;text-align:right}
+.testBuzzButton:hover{background:#fef3c7}
+@media(max-width:720px){
+  .homeSearchRow{grid-template-columns:1fr}
+  .homeSearchRow .primary,.homeSearchRow .secondary{width:100%;justify-content:center}
+}
