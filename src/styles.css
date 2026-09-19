@@ -40,3 +40,8 @@
 .leaflet-popup-content-wrapper{border-radius:16px}
 .leaflet-popup-content{margin:13px 14px}
 @media(max-width:720px){.logoutNotice{align-items:flex-start;flex-wrap:wrap}}
+
+.presenceOnline{color:#047857!important}
+.presenceOffline{color:#b45309!important}
+.childPhotoMarker{border-width:3px;box-shadow:0 0 0 2px #38bdf8,0 5px 12px #0f172a30}
+.childPhotoMarker.selected{box-shadow:0 0 0 3px #0284c7,0 6px 14px #0f172a38}
