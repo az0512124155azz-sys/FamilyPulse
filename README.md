@@ -68,3 +68,6 @@ npm run build
 ## פריסה
 
 אפשר לפרוס את תיקיית ה-build דרך Firebase Hosting או לחבר את המאגר ל-Vercel. חובה HTTPS בשביל Geolocation ו-PWA.
+
+
+<!-- redeploy: firebase env configured -->
