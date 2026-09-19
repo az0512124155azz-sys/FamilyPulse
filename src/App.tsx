@@ -17,6 +17,7 @@ type LogoutEvent={childUid:string;name:string;photoURL?:string;familyId:string;l
 type Presence={online:boolean;lastSeen?:{seconds:number};familyId?:string};
 type HomeConfig={lat:number;lng:number;radiusMeters:number;updatedAt?:{seconds:number}};
 type FamilyAlert={id:string;type:'exit_home'|'logout';childUid:string;childName:string;createdAt?:{seconds:number};lat?:number;lng?:number};
+type GeocodeResult={place_id:number;display_name:string;lat:string;lon:string};
 
 const randomCode=()=>Math.random().toString(36).slice(2,6).toUpperCase()+Math.random().toString(36).slice(2,6).toUpperCase();
 const randomId=()=>crypto.randomUUID().replaceAll('-','').slice(0,20);
@@ -39,6 +40,10 @@ export default function App(){
   const [home,setHome]=useState<HomeConfig|null>(null);
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [alerts,setAlerts]=useState<FamilyAlert[]>([]);
+  const [homeSearch,setHomeSearch]=useState('');
+  const [homeSearchResults,setHomeSearchResults]=useState<GeocodeResult[]>([]);
+  const [searchingHome,setSearchingHome]=useState(false);
+  const [homeSearchError,setHomeSearchError]=useState('');
   const requestStartedAt=useRef<Record<string,number>>({});
   const autoRequestedFamily=useRef<string>('');
   const children=useMemo(()=>members.filter(m=>m.role==='child' && m.active!==false),[members]);
@@ -548,31 +553,71 @@ export default function App(){
     }
   }
 
-  async function sendBuzz(child:Member){
+  async function sendBuzz(child:Member,testNow=false){
     if(!profile?.familyId) return;
 
-    if(!canBuzzNow()){
+    if(!testNow && !canBuzzNow()){
       setMessage('אפשר לצפצף לילד רק בימים ראשון–חמישי בין 08:10 ל־09:00.');
       return;
     }
 
-    if(child.homeStatus!=='inside'){
+    if(!testNow && child.homeStatus!=='inside'){
       setMessage('אפשרות הצפצוף זמינה רק לילד שמסומן כרגע בבית.');
       return;
     }
 
-    const ok=window.confirm(`אתה בטוח שאתה רוצה לצפצף לטלפון של ${child.name}?`);
-    if(!ok) return;
+    const question=testNow
+      ? `לשלוח עכשיו צפצוף בדיקה לטלפון של ${child.name}?`
+      : `אתה בטוח שאתה רוצה לצפצף לטלפון של ${child.name}?`;
+    if(!window.confirm(question)) return;
 
     await setDoc(doc(db,'buzzerCommands',child.uid),{
       childUid:child.uid,
       familyId:profile.familyId,
       requestedBy:profile.uid,
       status:'requested',
+      testMode:testNow,
       requestedAt:serverTimestamp()
     });
 
-    setMessage(`נשלחה בקשת צפצוף ל־${child.name}.`);
+    setMessage(testNow
+      ? `נשלח צפצוף בדיקה עכשיו ל־${child.name}.`
+      : `נשלחה בקשת צפצוף ל־${child.name}.`);
+  }
+
+  async function searchHomeAddress(){
+    const query=homeSearch.trim();
+    if(!query) return;
+
+    setSearchingHome(true);
+    setHomeSearchError('');
+    try{
+      const url=`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&accept-language=he&q=${encodeURIComponent(query)}`;
+      const response=await fetch(url,{headers:{Accept:'application/json'}});
+      if(!response.ok) throw new Error(`HTTP ${response.status}`);
+      const results=await response.json() as GeocodeResult[];
+      setHomeSearchResults(results);
+      if(results.length===0) setHomeSearchError('לא נמצאו תוצאות. נסה לכתוב רחוב, מספר ועיר.');
+    }catch(err){
+      console.error('Home address search failed',err);
+      setHomeSearchError('חיפוש הכתובת נכשל. אפשר עדיין לבחור בית מהמפה או להשתמש במיקום שלי.');
+    }finally{
+      setSearchingHome(false);
+    }
+  }
+
+  async function useMyLocationForHome(){
+    setHomeSearchError('');
+    if(!navigator.geolocation){
+      setHomeSearchError('הדפדפן הזה לא תומך במיקום.');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      pos=>void saveHome(pos.coords.latitude,pos.coords.longitude),
+      ()=>setHomeSearchError('לא הצלחנו לקבל את המיקום שלך. בדוק שהרשאת המיקום מאושרת.'),
+      {enableHighAccuracy:true,timeout:10000,maximumAge:15000}
+    );
   }
 
   async function saveHome(lat:number,lng:number){
@@ -787,19 +832,50 @@ export default function App(){
             <Home/>
             <div>
               <h3>בית</h3>
-              <p>לחץ על המפה כדי לבחור את מיקום הבית. הטווח קבוע על 30 מטר.</p>
+              <p>חפש כתובת, השתמש במיקום שלך או לחץ על המפה. הטווח קבוע על 30 מטר.</p>
             </div>
           </div>
 
           <div className="fixedRadius">רדיוס קבוע: <b>30 מטר</b></div>
 
+          <div className="homeSearchRow">
+            <input
+              value={homeSearch}
+              onChange={e=>setHomeSearch(e.target.value)}
+              onKeyDown={e=>{if(e.key==='Enter') void searchHomeAddress();}}
+              placeholder="רחוב, מספר, עיר"
+            />
+            <button className="primary compact" onClick={()=>void searchHomeAddress()} disabled={searchingHome||!homeSearch.trim()}>
+              {searchingHome?'מחפש…':'חפש'}
+            </button>
+            <button className="secondary compact" onClick={useMyLocationForHome}><LocateFixed/> המיקום שלי</button>
+          </div>
+
+          {homeSearchError&&<div className="settingsError">{homeSearchError}</div>}
+
+          {homeSearchResults.length>0&&<div className="addressResults">
+            {homeSearchResults.map(result=><button
+              key={result.place_id}
+              className="addressResult"
+              onClick={()=>{
+                void saveHome(Number(result.lat),Number(result.lon));
+                setHomeSearch(result.display_name);
+                setHomeSearchResults([]);
+              }}
+            >
+              <MapPin/>
+              <span>{result.display_name}</span>
+            </button>)}
+          </div>}
+
           <MapContainer
             center={home?[home.lat,home.lng]:(Object.values(locations)[0]?[Object.values(locations)[0].lat,Object.values(locations)[0].lng]:[31.7683,35.2137])}
-            zoom={home?17:12}
+            zoom={home?18:12}
             scrollWheelZoom
             className="settingsMap"
           >
             <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
+            <SettingsMapFocus home={home}/>
             <HomeClickHandler enabled onPick={saveHome}/>
             {home&&<>
               <Circle center={[home.lat,home.lng]} radius={30} pathOptions={{fillOpacity:0.1}}/>
@@ -807,7 +883,26 @@ export default function App(){
             </>}
           </MapContainer>
 
-          <p className="settingsHint">{home?'הבית מוגדר. לחץ במקום אחר במפה כדי לשנות אותו.':'עדיין לא הוגדר בית.'}</p>
+          <p className="settingsHint">{home?'הבית מוגדר. אפשר לחפש כתובת אחרת או ללחוץ במקום אחר במפה כדי לשנות אותו.':'עדיין לא הוגדר בית.'}</p>
+        </div>
+
+        <div className="settingsSection testAlertSection">
+          <div className="settingsSectionTitle">
+            <Smartphone/>
+            <div>
+              <h3>בדיקת התראה</h3>
+              <p>כפתור הבדיקה פועל גם עכשיו ועוקף זמנית את מגבלת 08:10–09:00 ואת תנאי “בבית”.</p>
+            </div>
+          </div>
+
+          {children.length===0
+            ? <p className="settingsHint">אין כרגע ילדים מחוברים לבדיקה.</p>
+            : <div className="testChildren">
+                {children.map(child=><button className="testBuzzButton" key={child.uid} onClick={()=>void sendBuzz(child,true)}>
+                  <div className="avatar tiny">{child.photoURL?<img src={child.photoURL}/>:child.name[0]}</div>
+                  <span>בדוק צפצוף עכשיו — {child.name}</span>
+                </button>)}
+              </div>}
         </div>
       </section>
     </div>}
@@ -893,6 +988,18 @@ async function playAlarmTone(){
 
   await new Promise(resolve=>setTimeout(resolve,duration*1000+150));
   await ctx.close();
+}
+
+function SettingsMapFocus({home}:{home:HomeConfig|null}){
+  const map=useMap();
+
+  useEffect(()=>{
+    if(home){
+      map.setView([home.lat,home.lng],18,{animate:true});
+    }
+  },[map,home?.lat,home?.lng]);
+
+  return null;
 }
 
 function HomeClickHandler({enabled,onPick}:{enabled:boolean;onPick:(lat:number,lng:number)=>void}){
