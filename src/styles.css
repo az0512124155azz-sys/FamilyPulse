@@ -725,3 +725,285 @@
     align-items:flex-start;
   }
 }
+
+
+/* ===== Mobile UX consolidation ===== */
+.connectPanelToggle{display:none}
+.connectPanelBody{display:contents}
+.logoutButton svg,.settingsButton svg{width:16px;height:16px}
+.logoutButton span,.settingsButton span{display:inline}
+
+@media(max-width:720px){
+  body{background:#f6f8fb}
+  .appShell,.childPage{min-height:100dvh}
+  .topbar{
+    height:64px;
+    direction:ltr;
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    align-items:center;
+    gap:10px;
+    padding:0 12px;
+  }
+  .brand{
+    direction:ltr;
+    min-width:0;
+    gap:8px;
+  }
+  .brand b{
+    font-size:17px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+  }
+  .miniProfile{
+    direction:rtl;
+    display:flex;
+    align-items:center;
+    gap:7px;
+  }
+  .profileRole{display:none!important}
+  .miniProfile .avatar.tiny{width:34px;height:34px}
+  .settingsButton,.logoutButton{
+    width:38px!important;
+    height:38px!important;
+    min-height:38px!important;
+    border-radius:12px!important;
+    padding:0!important;
+    display:grid!important;
+    place-items:center!important;
+    background:#fff!important;
+    border:1px solid #dbe3ed!important;
+    font-size:0!important;
+  }
+  .settingsButton span,.logoutButton span{display:none!important}
+  .logoutButton::after{display:none!important}
+  .settingsButton svg,.logoutButton svg{width:18px!important;height:18px!important}
+
+  .dashboard{
+    width:100%;
+    padding:14px 12px 88px;
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+  }
+
+  .parentHero{
+    order:-10;
+    background:transparent;
+    margin:0;
+    padding:0 2px;
+    min-height:0;
+  }
+  .parentHero .eyebrow{display:none}
+  .parentHero h1{
+    margin:0;
+    font-size:22px;
+    line-height:1.2;
+  }
+  .parentHero p{
+    margin-top:4px;
+    font-size:12px;
+    color:#64748b;
+  }
+
+  .connectPanel{
+    order:-9;
+    margin:0;
+    padding:0!important;
+    border:1px solid #e2e8f0;
+    background:#fff;
+    border-radius:16px;
+    overflow:hidden;
+  }
+  .connectPanelToggle{
+    width:100%;
+    border:0;
+    background:#fff;
+    min-height:52px;
+    padding:0 14px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    color:#0f172a;
+    font-weight:850;
+  }
+  .connectPanelToggle>span{
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .connectPanelToggle svg{width:18px;height:18px}
+  .connectPanelToggle>svg{transition:transform .18s ease}
+  .connectPanel.open .connectPanelToggle>svg{transform:rotate(180deg)}
+  .connectPanelBody{
+    display:none;
+    padding:0 14px 14px;
+  }
+  .connectPanel.open .connectPanelBody{display:block}
+  .connectIntro h2{display:none}
+  .connectIntro p{
+    margin:0 0 10px;
+    font-size:12px;
+    line-height:1.45;
+    color:#64748b;
+  }
+  .codeInput{
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr) 74px!important;
+    gap:8px!important;
+  }
+  .codeInput input{height:46px}
+  .codeInput button{height:46px;padding:0}
+
+  .childrenSection{
+    order:-8;
+    margin:0;
+  }
+  .childrenSection>.sectionTitle{
+    margin:0 2px 8px;
+  }
+  .childrenSection>.sectionTitle h2{font-size:20px}
+  .childrenGrid{gap:10px}
+
+  .childCard{
+    border-radius:16px!important;
+    border:1px solid #e2e8f0!important;
+    box-shadow:0 3px 12px #0f172a06!important;
+    background:#fff!important;
+  }
+  .childCard.active{
+    border-color:#7dd3fc!important;
+    box-shadow:0 0 0 2px #7dd3fc22!important;
+  }
+  .childCardTop{
+    grid-template-columns:50px minmax(0,1fr)!important;
+    gap:10px!important;
+  }
+  .childCardTop>.avatar{width:50px!important;height:50px!important}
+  .childNameRow>b{font-size:16px!important}
+  .connectionDot{font-size:9px!important}
+  .childCardMeta{margin-top:-2px}
+  .childActions{
+    grid-template-columns:1fr 1fr!important;
+    gap:8px!important;
+  }
+  .childActions .buzzButton,.childActions .locate{
+    min-height:44px!important;
+    font-size:12px!important;
+    border-radius:12px!important;
+  }
+
+  .alertsPanel,.logoutNotices{
+    margin:0!important;
+    padding:14px!important;
+    border-radius:16px!important;
+    box-shadow:none!important;
+  }
+  .alertsPanel .sectionTitle,.logoutNotices .sectionTitle{
+    margin-bottom:8px;
+  }
+  .familyAlert,.logoutNotice{
+    border-radius:12px!important;
+    padding:10px!important;
+  }
+
+  .mapPanel{
+    margin:0!important;
+    border-radius:16px!important;
+    box-shadow:none!important;
+  }
+  .mapHeader{
+    padding:14px!important;
+  }
+  .mapHeader h2{font-size:18px!important}
+  .mapActions{grid-template-columns:1fr!important}
+  .mapActions .primary,.mapActions .secondary{
+    min-height:44px!important;
+  }
+  .map{
+    height:360px!important;
+    min-height:360px!important;
+    max-height:360px!important;
+  }
+  .mapPlaceholder{
+    height:220px!important;
+    min-height:220px!important;
+    border-top:1px solid #eef2f7;
+  }
+
+  .share{
+    margin:0!important;
+    padding:14px!important;
+    border-radius:16px!important;
+    box-shadow:none!important;
+  }
+
+  .globalToast{
+    position:fixed!important;
+    left:12px;
+    right:12px;
+    bottom:calc(14px + env(safe-area-inset-bottom));
+    z-index:3000;
+    margin:0!important;
+    box-shadow:0 12px 36px #0f172a22;
+    border-radius:14px!important;
+    text-align:center;
+  }
+
+  .settingsOverlay{
+    background:#f6f8fb!important;
+  }
+  .settingsModal{
+    background:#f6f8fb!important;
+  }
+  .settingsHeader{
+    background:#fff!important;
+  }
+  .settingsSection{
+    background:#fff!important;
+    border-radius:16px!important;
+    box-shadow:none!important;
+  }
+
+  .childMain{
+    width:100%;
+    padding:24px 12px 80px;
+  }
+  .pulseOrb{
+    width:68px!important;
+    height:68px!important;
+    box-shadow:0 0 0 10px #e0f2fe55,0 0 0 20px #e0f2fe28!important;
+  }
+  .pulseOrb svg{width:30px!important;height:30px!important}
+  .childMain h1{font-size:23px!important;margin:32px 0 6px!important}
+  .childMain>p{font-size:12px!important;line-height:1.5!important}
+  .childMain .codeCard,.soundSetup,.infoBox{
+    border-radius:14px!important;
+  }
+  .soundSetup{
+    display:flex!important;
+    flex-direction:column!important;
+    align-items:stretch!important;
+    gap:10px!important;
+  }
+  .soundSetup>svg{display:none}
+  .soundSetup .grow{text-align:right}
+  .soundSetup .primary{width:100%!important}
+
+  .onboarding{
+    padding-left:12px!important;
+    padding-right:12px!important;
+  }
+  .setupCard,.googleLinkCard{
+    box-shadow:none!important;
+    border-radius:18px!important;
+  }
+}
+
+@media(max-width:390px){
+  .topbar{padding:0 9px}
+  .brand b{font-size:16px}
+  .dashboard{padding-left:9px;padding-right:9px}
+  .childActions{grid-template-columns:1fr!important}
+  .map{height:320px!important;min-height:320px!important;max-height:320px!important}
+}
