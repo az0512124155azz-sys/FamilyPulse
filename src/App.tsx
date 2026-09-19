@@ -215,6 +215,31 @@ export default function App(){
   },[profile]);
 
   useEffect(()=>{
+    if(!profile || profile.role!=='child') return;
+
+    return onSnapshot(doc(db,'buzzerCommands',profile.uid),async snap=>{
+      const data=snap.data() as {status?:string}|undefined;
+      if(!data || data.status!=='requested') return;
+
+      try{
+        await playAlarmTone();
+        await updateDoc(doc(db,'buzzerCommands',profile.uid),{
+          status:'completed',
+          completedAt:serverTimestamp()
+        });
+        setMessage('התקבלה התראת השכמה מההורה.');
+      }catch(err){
+        console.error('Alarm playback failed',err);
+        await updateDoc(doc(db,'buzzerCommands',profile.uid),{
+          status:'failed',
+          completedAt:serverTimestamp()
+        });
+        setMessage('התקבלה התראת השכמה, אבל הדפדפן חסם את הצליל.');
+      }
+    });
+  },[profile?.uid,profile?.role]);
+
+  useEffect(()=>{
     if(profile?.role!=='parent' || children.length===0) return;
 
     const unsubs=children.map(child=>
@@ -478,6 +503,49 @@ export default function App(){
     }finally{
       window.location.reload();
     }
+  }
+
+  async function sendBuzz(child:Member){
+    if(!profile?.familyId) return;
+
+    if(!canBuzzNow()){
+      setMessage('אפשר לצפצף לילד רק בימים ראשון–חמישי בין 08:10 ל־09:00.');
+      return;
+    }
+
+    if(child.homeStatus!=='inside'){
+      setMessage('אפשרות הצפצוף זמינה רק לילד שמסומן כרגע בבית.');
+      return;
+    }
+
+    const ok=window.confirm(`אתה בטוח שאתה רוצה לצפצף לטלפון של ${child.name}?`);
+    if(!ok) return;
+
+    await setDoc(doc(db,'buzzerCommands',child.uid),{
+      childUid:child.uid,
+      familyId:profile.familyId,
+      requestedBy:profile.uid,
+      status:'requested',
+      requestedAt:serverTimestamp()
+    });
+
+    setMessage(`נשלחה בקשת צפצוף ל־${child.name}.`);
+  }
+
+  async function saveHome(lat:number,lng:number){
+    if(!profile?.familyId) return;
+
+    await setDoc(doc(db,'families',profile.familyId),{
+      home:{
+        lat,
+        lng,
+        radiusMeters:homeRadius,
+        updatedAt:serverTimestamp()
+      }
+    },{merge:true});
+
+    setSettingHome(false);
+    setMessage('מיקום הבית נשמר.');
   }
 
   async function requestLocation(child:Member,focus=true){
