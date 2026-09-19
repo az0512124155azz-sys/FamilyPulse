@@ -12,3 +12,11 @@
 
 .logoutButton{border:1px solid #e2e8f0;background:#fff;color:#475569;border-radius:10px;padding:7px 10px;font-weight:800;font-size:12px}
 .logoutButton:hover{background:#f8fafc;color:#0f172a}
+
+.childMapTooltip{background:transparent!important;border:0!important;box-shadow:none!important;padding:0!important}
+.childMapTooltip:before{display:none!important}
+.mapChildLabel{display:flex;align-items:center;gap:7px;border:1px solid #dbe3ed;background:#fff;border-radius:999px;padding:5px 9px 5px 5px;box-shadow:0 6px 18px #0f172a24;color:#0f172a;font-weight:800;white-space:nowrap}
+.childMapTooltip.selected .mapChildLabel{border-color:#38bdf8;box-shadow:0 0 0 3px #38bdf820,0 8px 22px #0f172a28}
+.mapChildAvatar{width:28px;height:28px;border-radius:50%;overflow:hidden;background:#e0f2fe;color:#0369a1;display:grid;place-items:center;flex:none;font-size:12px;font-weight:900}
+.mapChildAvatar img{width:100%;height:100%;object-fit:cover;display:block}
+.mapChildName{font-size:13px;line-height:1}
