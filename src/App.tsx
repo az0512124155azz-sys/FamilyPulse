@@ -114,7 +114,7 @@ export default function App(){
         photoURL,
         role:setupRole,
         code,
-        familyId
+        ...(familyId ? { familyId } : {})
       };
 
       await setDoc(doc(db,'users',user.uid),p);
