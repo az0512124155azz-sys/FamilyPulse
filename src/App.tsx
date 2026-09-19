@@ -2,10 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { CircleMarker, MapContainer, TileLayer } from 'react-leaflet';
 import { Baby, Copy, LocateFixed, MapPin, Plus, ShieldCheck, Smartphone, Users } from 'lucide-react';
-import { auth, db, ensureAuth, firebaseReady, storage } from './firebase';
+import { auth, db, ensureAuth, firebaseReady } from './firebase';
 
 type Role='parent'|'child';
 type Profile={uid:string;name:string;photoURL?:string;role:Role;code:string;familyId?:string};
