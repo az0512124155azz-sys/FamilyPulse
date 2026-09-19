@@ -44,6 +44,9 @@ export default function App(){
   const [homeSearchResults,setHomeSearchResults]=useState<GeocodeResult[]>([]);
   const [searchingHome,setSearchingHome]=useState(false);
   const [homeSearchError,setHomeSearchError]=useState('');
+  const [homeDraft,setHomeDraft]=useState<{lat:number;lng:number;label?:string}|null>(null);
+  const [soundReady,setSoundReady]=useState(false);
+  const audioContextRef=useRef<AudioContext|null>(null);
   const requestStartedAt=useRef<Record<string,number>>({});
   const autoRequestedFamily=useRef<string>('');
   const children=useMemo(()=>members.filter(m=>m.role==='child' && m.active!==false),[members]);
@@ -87,7 +90,7 @@ export default function App(){
 
               if(child.inviteCode){
                 const pair=await getDoc(doc(db,'pairCodes',child.inviteCode));
-                if(!pair.exists()){
+                if(!pair.exists() || pair.data()?.revoked===true){
                   await deleteDoc(doc(db,'families',profile.familyId!,'members',child.uid));
                   setLocations(prev=>{
                     const copy={...prev};
@@ -269,7 +272,12 @@ export default function App(){
       if(!data || data.status!=='requested') return;
 
       try{
-        await playAlarmTone();
+        const ctx=audioContextRef.current;
+        if(!ctx || ctx.state!=='running'){
+          throw new Error('audio-not-enabled');
+        }
+
+        await playAlarmTone(ctx);
         await updateDoc(doc(db,'buzzerCommands',profile.uid),{
           status:'completed',
           completedAt:serverTimestamp()
@@ -281,7 +289,7 @@ export default function App(){
           status:'failed',
           completedAt:serverTimestamp()
         });
-        setMessage('התקבלה התראת השכמה, אבל הדפדפן חסם את הצליל.');
+        setMessage('התקבלה התראה, אבל הצליל לא הופעל. לחץ על “הפעל צלילי התראה” במכשיר הילד.');
       }
     });
   },[profile?.uid,profile?.role]);
@@ -445,6 +453,25 @@ export default function App(){
     setJoinCode('');
   }
 
+  async function enableAlertSound(){
+    try{
+      const AudioCtx=window.AudioContext || (window as typeof window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext;
+      if(!AudioCtx) throw new Error('AudioContext unsupported');
+
+      const ctx=audioContextRef.current||new AudioCtx();
+      audioContextRef.current=ctx;
+      if(ctx.state==='suspended') await ctx.resume();
+
+      await playAlarmTone(ctx,0.35);
+      setSoundReady(true);
+      setMessage('צלילי ההתראה הופעלו במכשיר הזה.');
+    }catch(err){
+      console.error('Could not enable alert sound',err);
+      setSoundReady(false);
+      setMessage('לא הצלחנו להפעיל את הצליל. בדוק שעוצמת המדיה אינה על אפס ונסה שוב.');
+    }
+  }
+
   async function getLogoutLocation(){
     const getPosition=(options:PositionOptions)=>new Promise<GeolocationPosition>((resolve,reject)=>
       navigator.geolocation.getCurrentPosition(resolve,reject,options)
@@ -462,11 +489,11 @@ export default function App(){
 
   async function logout(){
     if(profile?.role==='child'){
-      setMessage('שומר את מצב ההתנתקות והמיקום האחרון…');
+      setMessage('מנתק ומסיר את המשתמש…');
+
+      let familyId=localStorage.getItem('familypulse.familyId')||'';
 
       try{
-        let familyId=localStorage.getItem('familypulse.familyId')||'';
-
         if(!familyId){
           const link=await getDoc(doc(db,'childLinks',profile.uid));
           if(link.exists()) familyId=String(link.data().familyId||'');
@@ -476,74 +503,90 @@ export default function App(){
           const lastRequest=await getDoc(doc(db,'locationRequests',profile.uid));
           if(lastRequest.exists()) familyId=String(lastRequest.data().familyId||'');
         }
+      }catch(err){
+        console.warn('Could not resolve family during logout',err);
+      }
 
-        if(!familyId){
-          throw new Error('לא ניתן לזהות את המשפחה של הילד. פתח את FamilyPulse אצל ההורה, רענן מיקום פעם אחת ונסה שוב.');
-        }
+      const pos=familyId?await getLogoutLocation():null;
 
-        localStorage.setItem('familypulse.familyId',familyId);
+      if(familyId){
+        // These writes should never prevent the actual logout.
+        await Promise.allSettled([
+          setDoc(doc(db,'presence',profile.uid),{
+            uid:profile.uid,
+            familyId,
+            online:false,
+            lastSeen:serverTimestamp()
+          },{merge:true}),
+          setDoc(doc(db,'families',familyId,'logoutEvents',`${profile.uid}-${Date.now()}`),{
+            childUid:profile.uid,
+            name:profile.name,
+            photoURL:profile.photoURL||'',
+            familyId,
+            hasLocation:Boolean(pos),
+            ...(pos?{
+              lat:pos.coords.latitude,
+              lng:pos.coords.longitude,
+              accuracy:pos.coords.accuracy
+            }:{}),
+            loggedOutAt:serverTimestamp()
+          }),
+          setDoc(doc(db,'families',familyId,'alerts',randomId()),{
+            type:'logout',
+            childUid:profile.uid,
+            childName:profile.name,
+            lat:pos?.coords.latitude??null,
+            lng:pos?.coords.longitude??null,
+            createdAt:serverTimestamp()
+          }),
+          // Works even with older rules that allowed child updates but not deletes.
+          updateDoc(doc(db,'families',familyId,'members',profile.uid),{
+            active:false,
+            disconnectedAt:serverTimestamp()
+          })
+        ]);
 
-        const pos=await getLogoutLocation();
+        // Revoke the pairing code before cleanup so the parent can remove stale members.
+        await Promise.allSettled([
+          setDoc(doc(db,'pairCodes',profile.code),{
+            uid:profile.uid,
+            type:'child',
+            name:profile.name,
+            photoURL:profile.photoURL||'',
+            revoked:true,
+            revokedAt:serverTimestamp()
+          },{merge:true}),
+          setDoc(doc(db,'users',profile.uid),{
+            deleted:true,
+            deletedAt:serverTimestamp()
+          },{merge:true})
+        ]);
 
-        await setDoc(doc(db,'presence',profile.uid),{
-          uid:profile.uid,
-          familyId,
-          online:false,
-          lastSeen:serverTimestamp()
-        },{merge:true});
+        await Promise.allSettled([
+          deleteDoc(doc(db,'families',familyId,'members',profile.uid)),
+          deleteDoc(doc(db,'childLinks',profile.uid)),
+          deleteDoc(doc(db,'presence',profile.uid)),
+          deleteDoc(doc(db,'locations',profile.uid)),
+          deleteDoc(doc(db,'locationRequests',profile.uid)),
+          deleteDoc(doc(db,'buzzerCommands',profile.uid)),
+          deleteDoc(doc(db,'pairCodes',profile.code)),
+          deleteDoc(doc(db,'users',profile.uid))
+        ]);
+      }
 
-        const eventData:Record<string,unknown>={
-          childUid:profile.uid,
-          name:profile.name,
-          photoURL:profile.photoURL||'',
-          familyId,
-          hasLocation:Boolean(pos),
-          loggedOutAt:serverTimestamp()
-        };
+      localStorage.removeItem('familypulse.familyId');
 
-        if(pos){
-          eventData.lat=pos.coords.latitude;
-          eventData.lng=pos.coords.longitude;
-          eventData.accuracy=pos.coords.accuracy;
-        }
-
-        await setDoc(
-          doc(db,'families',familyId,'logoutEvents',`${profile.uid}-${Date.now()}`),
-          eventData
-        );
-
-        await setDoc(doc(db,'families',familyId,'alerts',randomId()),{
-          type:'logout',
-          childUid:profile.uid,
-          childName:profile.name,
-          lat:pos?.coords.latitude??null,
-          lng:pos?.coords.longitude??null,
-          createdAt:serverTimestamp()
-        });
-
-        await deleteDoc(doc(db,'families',familyId,'members',profile.uid));
-        await deleteDoc(doc(db,'childLinks',profile.uid));
-        await deleteDoc(doc(db,'presence',profile.uid));
-        await deleteDoc(doc(db,'locations',profile.uid));
-        await deleteDoc(doc(db,'locationRequests',profile.uid));
-        await deleteDoc(doc(db,'buzzerCommands',profile.uid));
-        await deleteDoc(doc(db,'pairCodes',profile.code));
-        await deleteDoc(doc(db,'users',profile.uid));
-
-        localStorage.removeItem('familypulse.familyId');
-
+      try{
         if(auth.currentUser){
           await deleteUser(auth.currentUser);
         }
-
-        window.location.reload();
-        return;
       }catch(err){
-        console.error('Child logout failed',err);
-        const detail=err instanceof Error?err.message:'שגיאה לא ידועה';
-        setMessage(`ההתנתקות נכשלה: ${detail}`);
-        return;
+        console.warn('Firebase Auth delete failed; signing out instead',err);
+        try{ await signOut(auth); }catch{}
       }
+
+      window.location.reload();
+      return;
     }
 
     try{
@@ -614,26 +657,32 @@ export default function App(){
     }
 
     navigator.geolocation.getCurrentPosition(
-      pos=>void saveHome(pos.coords.latitude,pos.coords.longitude),
+      pos=>setHomeDraft({lat:pos.coords.latitude,lng:pos.coords.longitude,label:'המיקום שלי'}),
       ()=>setHomeSearchError('לא הצלחנו לקבל את המיקום שלך. בדוק שהרשאת המיקום מאושרת.'),
       {enableHighAccuracy:true,timeout:10000,maximumAge:15000}
     );
   }
 
-  async function saveHome(lat:number,lng:number){
-    if(!profile?.familyId) return;
+  async function saveHome(){
+    if(!profile?.familyId || !homeDraft) return;
 
-    await setDoc(doc(db,'families',profile.familyId),{
-      home:{
-        lat,
-        lng,
-        radiusMeters:30,
-        updatedAt:serverTimestamp()
-      }
-    },{merge:true});
+    try{
+      await setDoc(doc(db,'families',profile.familyId),{
+        home:{
+          lat:homeDraft.lat,
+          lng:homeDraft.lng,
+          radiusMeters:30,
+          updatedAt:serverTimestamp()
+        }
+      },{merge:true});
 
-    setHome({lat,lng,radiusMeters:30});
-    setMessage('מיקום הבית נשמר עם רדיוס קבוע של 30 מטר.');
+      setHome({lat:homeDraft.lat,lng:homeDraft.lng,radiusMeters:30});
+      setMessage('הבית נשמר בהצלחה.');
+      setSettingsOpen(false);
+    }catch(err){
+      console.error('Saving home failed',err);
+      setHomeSearchError('שמירת הבית נכשלה. ודא ש־Firestore Rules המעודכנים פורסמו ונסה שוב.');
+    }
   }
 
   async function requestLocation(child:Member,focus=true){
@@ -688,13 +737,21 @@ export default function App(){
       <h1>הכול מחובר</h1>
       <p>אין צורך להשאיר GPS פעיל כל הזמן. כשהורה מבקש מיקום בזמן שהאפליקציה פתוחה, FamilyPulse מקבל נקודה עדכנית ושולח אותה.</p>
       <CodeCard code={profile.code} title="קוד החיבור שלך"/>
-      <div className="infoBox"><Smartphone/><span>באייפון, אם ה־PWA סגור לגמרי, האתר לא יכול להדליק GPS ברקע. פתח/י את FamilyPulse כאשר ההורה מבקש מיקום.</span></div>
+      <div className={soundReady?'soundSetup ready':'soundSetup'}>
+        <Smartphone/>
+        <div className="grow">
+          <b>{soundReady?'צלילי התראה פעילים':'הפעל צלילי התראה'}</b>
+          <span>{soundReady?'המכשיר מוכן לקבל צפצוף כל עוד FamilyPulse פתוח.':'צריך ללחוץ פעם אחת כדי שהדפדפן יאשר השמעת צפצופים.'}</span>
+        </div>
+        <button className="primary compact" onClick={()=>void enableAlertSound()}>{soundReady?'בדוק צליל':'הפעל עכשיו'}</button>
+      </div>
+      <div className="infoBox"><Smartphone/><span>באייפון, אם ה־PWA סגור לגמרי, האתר לא יכול להפעיל GPS או צליל ברקע באופן אמין.</span></div>
       {message&&<div className="toast">{message}</div>}
     </main>
   </div>;
 
   return <div className="appShell">
-    <TopBar profile={profile} onLogout={logout} onSettings={()=>setSettingsOpen(true)}/>
+    <TopBar profile={profile} onLogout={logout} onSettings={()=>{setHomeDraft(home?{lat:home.lat,lng:home.lng,label:'בית'}:null);setSettingsOpen(true);}}/>
     <main className="dashboard">
       <section className="hero"><div><span className="eyebrow">המשפחה שלי</span><h1>שלום, {profile.name}</h1><p>{children.length} ילדים · {parents.length} הורים מחוברים</p></div><div className="avatar big">{profile.photoURL?<img src={profile.photoURL}/>:profile.name[0]}</div></section>
 
@@ -753,8 +810,16 @@ export default function App(){
               {home&&<span className={child.homeStatus==='inside'?'homeBadge inside':'homeBadge outside'}>
                 {child.homeStatus==='inside'?'בבית':child.homeStatus==='outside'?'מחוץ לבית':'לא ידוע'}
               </span>}
-              {canBuzzNow()&&child.homeStatus==='inside'&&
-                <button className="buzzButton" onClick={e=>{e.stopPropagation();sendBuzz(child)}}>🔔 צפצף</button>}
+              <button
+                className={canBuzzNow()&&child.homeStatus==='inside'?'buzzButton':'buzzButton test'}
+                onClick={e=>{
+                  e.stopPropagation();
+                  const testMode=!(canBuzzNow()&&child.homeStatus==='inside');
+                  void sendBuzz(child,testMode);
+                }}
+              >
+                🔔 {canBuzzNow()&&child.homeStatus==='inside'?'צפצף':'בדיקת צפצוף'}
+              </button>
               <button className="locate" onClick={e=>{e.stopPropagation();requestLocation(child)}}><LocateFixed/> רענן</button>
             </div>
           </article>
@@ -858,7 +923,7 @@ export default function App(){
               key={result.place_id}
               className="addressResult"
               onClick={()=>{
-                void saveHome(Number(result.lat),Number(result.lon));
+                setHomeDraft({lat:Number(result.lat),lng:Number(result.lon),label:result.display_name});
                 setHomeSearch(result.display_name);
                 setHomeSearchResults([]);
               }}
@@ -869,41 +934,31 @@ export default function App(){
           </div>}
 
           <MapContainer
-            center={home?[home.lat,home.lng]:(Object.values(locations)[0]?[Object.values(locations)[0].lat,Object.values(locations)[0].lng]:[31.7683,35.2137])}
-            zoom={home?18:12}
+            center={homeDraft?[homeDraft.lat,homeDraft.lng]:home?[home.lat,home.lng]:(Object.values(locations)[0]?[Object.values(locations)[0].lat,Object.values(locations)[0].lng]:[31.7683,35.2137])}
+            zoom={homeDraft||home?18:12}
             scrollWheelZoom
             className="settingsMap"
           >
             <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
-            <SettingsMapFocus home={home}/>
-            <HomeClickHandler enabled onPick={saveHome}/>
-            {home&&<>
-              <Circle center={[home.lat,home.lng]} radius={30} pathOptions={{fillOpacity:0.1}}/>
-              <Marker position={[home.lat,home.lng]} icon={createHomeMarkerIcon()} zIndexOffset={2000}/>
+            <SettingsMapFocus home={homeDraft?{lat:homeDraft.lat,lng:homeDraft.lng,radiusMeters:30}:home}/>
+            <HomeClickHandler enabled onPick={(lat,lng)=>setHomeDraft({lat,lng,label:'נקודה שנבחרה במפה'})}/>
+            {(homeDraft||home)&&<>
+              <Circle center={[homeDraft?.lat??home!.lat,homeDraft?.lng??home!.lng]} radius={30} pathOptions={{fillOpacity:0.1}}/>
+              <Marker position={[homeDraft?.lat??home!.lat,homeDraft?.lng??home!.lng]} icon={createHomeMarkerIcon()} zIndexOffset={2000}/>
             </>}
           </MapContainer>
 
-          <p className="settingsHint">{home?'הבית מוגדר. אפשר לחפש כתובת אחרת או ללחוץ במקום אחר במפה כדי לשנות אותו.':'עדיין לא הוגדר בית.'}</p>
-        </div>
-
-        <div className="settingsSection testAlertSection">
-          <div className="settingsSectionTitle">
-            <Smartphone/>
+          <div className="homeDraftBar">
             <div>
-              <h3>בדיקת התראה</h3>
-              <p>כפתור הבדיקה פועל גם עכשיו ועוקף זמנית את מגבלת 08:10–09:00 ואת תנאי “בבית”.</p>
+              <b>{homeDraft?'המיקום שנבחר':'לא נבחר מיקום חדש'}</b>
+              <span>{homeDraft?.label||'חפש כתובת, השתמש במיקום שלך או לחץ על המפה.'}</span>
             </div>
+            <button className="primary" disabled={!homeDraft} onClick={()=>void saveHome()}>שמור את הבית</button>
           </div>
-
-          {children.length===0
-            ? <p className="settingsHint">אין כרגע ילדים מחוברים לבדיקה.</p>
-            : <div className="testChildren">
-                {children.map(child=><button className="testBuzzButton" key={child.uid} onClick={()=>void sendBuzz(child,true)}>
-                  <div className="avatar tiny">{child.photoURL?<img src={child.photoURL}/>:child.name[0]}</div>
-                  <span>בדוק צפצוף עכשיו — {child.name}</span>
-                </button>)}
-              </div>}
+          <p className="settingsHint">{home?'הבית הנוכחי נשמר במערכת.':'עדיין לא נשמר בית.'}</p>
         </div>
+
+
       </section>
     </div>}
   </div>;
@@ -958,15 +1013,10 @@ function distanceMeters(lat1:number,lng1:number,lat2:number,lng2:number){
   return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-async function playAlarmTone(){
-  const AudioCtx=window.AudioContext || (window as typeof window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext;
-  if(!AudioCtx) throw new Error('AudioContext unsupported');
-
-  const ctx=new AudioCtx();
+async function playAlarmTone(ctx:AudioContext,duration=6){
   if(ctx.state==='suspended') await ctx.resume();
 
   const start=ctx.currentTime;
-  const duration=6;
   const gain=ctx.createGain();
   gain.gain.setValueAtTime(0.0001,start);
   gain.gain.exponentialRampToValueAtTime(0.9,start+0.05);
@@ -987,8 +1037,8 @@ async function playAlarmTone(){
   osc.stop(start+duration);
 
   await new Promise(resolve=>setTimeout(resolve,duration*1000+150));
-  await ctx.close();
 }
+
 
 function SettingsMapFocus({home}:{home:HomeConfig|null}){
   const map=useMap();
