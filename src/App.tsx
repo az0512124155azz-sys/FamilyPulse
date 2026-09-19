@@ -482,10 +482,20 @@ export default function App(){
     }catch(err){
       console.error('Google linking failed',err);
       const code=typeof err==='object' && err && 'code' in err ? String((err as {code?:unknown}).code||'') : '';
+      const detail=err instanceof Error?err.message:'';
+
       if(code.includes('credential-already-in-use')){
         setMessage('חשבון Google הזה כבר מחובר לחשבון FamilyPulse אחר. התנתק והשתמש ב״יש לי כבר חשבון״.');
+      }else if(code.includes('unauthorized-domain')){
+        setMessage(`Google מופעל, אבל הדומיין הזה לא מורשה ב־Firebase Authentication. הוסף את ${window.location.hostname} לרשימת Authorized domains. [${code}]`);
+      }else if(code.includes('popup-blocked')){
+        setMessage(`הדפדפן חסם את חלון Google. אפשר חלונות קופצים לאתר ונסה שוב. [${code}]`);
+      }else if(code.includes('popup-closed-by-user')){
+        setMessage('חלון ההתחברות ל־Google נסגר לפני שהחיבור הושלם.');
+      }else if(code.includes('operation-not-allowed')){
+        setMessage(`ספק Google אינו מורשה בפרויקט Firebase הזה. [${code}]`);
       }else{
-        setMessage('החיבור ל־Google נכשל. ודא שספק Google מופעל ב־Firebase Authentication ונסה שוב.');
+        setMessage(`החיבור ל־Google נכשל: ${code||detail||'שגיאה לא ידועה'}`);
       }
     }finally{
       setGoogleBusy(false);
@@ -511,7 +521,18 @@ export default function App(){
       setProfile({uid:result.user.uid,...snap.data()} as Profile);
     }catch(err){
       console.error('Google sign in failed',err);
-      setMessage('הכניסה עם Google נכשלה. בדוק ש־Google מופעל ב־Firebase Authentication.');
+      const code=typeof err==='object' && err && 'code' in err ? String((err as {code?:unknown}).code||'') : '';
+      const detail=err instanceof Error?err.message:'';
+
+      if(code.includes('unauthorized-domain')){
+        setMessage(`Google מופעל, אבל הדומיין הזה לא מורשה ב־Firebase Authentication. הוסף את ${window.location.hostname} לרשימת Authorized domains. [${code}]`);
+      }else if(code.includes('popup-blocked')){
+        setMessage(`הדפדפן חסם את חלון Google. אפשר חלונות קופצים לאתר ונסה שוב. [${code}]`);
+      }else if(code.includes('popup-closed-by-user')){
+        setMessage('חלון ההתחברות ל־Google נסגר לפני שהכניסה הושלמה.');
+      }else{
+        setMessage(`הכניסה עם Google נכשלה: ${code||detail||'שגיאה לא ידועה'}`);
+      }
     }finally{
       setGoogleBusy(false);
     }
