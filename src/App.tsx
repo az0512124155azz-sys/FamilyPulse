@@ -777,6 +777,64 @@ function presenceText(p?:Presence){
   return `לא מחובר · ${locationAge(p.lastSeen)}`;
 }
 
+function canBuzzNow(){
+  const now=new Date();
+  const day=now.getDay();
+  const minutes=now.getHours()*60+now.getMinutes();
+  return day>=0 && day<=4 && minutes>=8*60+10 && minutes<9*60;
+}
+
+function distanceMeters(lat1:number,lng1:number,lat2:number,lng2:number){
+  const R=6371000;
+  const toRad=(v:number)=>v*Math.PI/180;
+  const dLat=toRad(lat2-lat1);
+  const dLng=toRad(lng2-lng1);
+  const a=Math.sin(dLat/2)**2+
+    Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+async function playAlarmTone(){
+  const AudioCtx=window.AudioContext || (window as typeof window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext;
+  if(!AudioCtx) throw new Error('AudioContext unsupported');
+
+  const ctx=new AudioCtx();
+  if(ctx.state==='suspended') await ctx.resume();
+
+  const start=ctx.currentTime;
+  const duration=6;
+  const gain=ctx.createGain();
+  gain.gain.setValueAtTime(0.0001,start);
+  gain.gain.exponentialRampToValueAtTime(0.9,start+0.05);
+  gain.connect(ctx.destination);
+
+  const osc=ctx.createOscillator();
+  osc.type='square';
+  osc.frequency.setValueAtTime(880,start);
+  osc.connect(gain);
+  osc.start(start);
+
+  for(let t=0;t<duration;t+=0.45){
+    osc.frequency.setValueAtTime(t%0.9<0.45?880:660,start+t);
+  }
+
+  gain.gain.setValueAtTime(0.9,start+duration-0.1);
+  gain.gain.exponentialRampToValueAtTime(0.0001,start+duration);
+  osc.stop(start+duration);
+
+  await new Promise(resolve=>setTimeout(resolve,duration*1000+150));
+  await ctx.close();
+}
+
+function HomeClickHandler({enabled,onPick}:{enabled:boolean;onPick:(lat:number,lng:number)=>void}){
+  useMapEvents({
+    click(e){
+      if(enabled) onPick(e.latlng.lat,e.latlng.lng);
+    }
+  });
+  return null;
+}
+
 function createChildMarkerIcon(child:Member,selected:boolean){
   const size=selected?38:32;
 
