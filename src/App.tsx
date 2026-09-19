@@ -390,6 +390,23 @@ export default function App(){
     <TopBar profile={profile} onLogout={logout}/>
     <main className="dashboard">
       <section className="hero"><div><span className="eyebrow">המשפחה שלי</span><h1>שלום, {profile.name}</h1><p>{children.length} ילדים · {parents.length} הורים מחוברים</p></div><div className="avatar big">{profile.photoURL?<img src={profile.photoURL}/>:profile.name[0]}</div></section>
+
+      {logoutEvents.length>0&&<section className="logoutNotices">
+        <div className="sectionTitle"><h2>התנתקויות אחרונות</h2><span>{logoutEvents.length}</span></div>
+        <div className="logoutNoticeList">
+          {logoutEvents.map(event=><article className="logoutNotice" key={`${event.childUid}-${event.loggedOutAt?.seconds||0}`}>
+            <div className="avatar">{event.photoURL?<img src={event.photoURL}/>:event.name[0]}</div>
+            <div className="grow">
+              <b>{event.name} התנתק מ־FamilyPulse</b>
+              <span>{event.loggedOutAt?locationAge(event.loggedOutAt):'עכשיו'}</span>
+              {event.hasLocation&&typeof event.lat==='number'&&typeof event.lng==='number'
+                ? <small>מיקום אחרון: {event.lat.toFixed(5)}, {event.lng.toFixed(5)}{typeof event.accuracy==='number'?` · דיוק כ־${Math.round(event.accuracy)} מ׳`:''}</small>
+                : <small>לא התקבל מיקום אחרון בזמן ההתנתקות.</small>}
+            </div>
+          </article>)}
+        </div>
+      </section>}
+
       <section className="connectPanel">
         <div><h2><Plus/> הוספת ילד או הורה</h2><p>הקלד קוד. FamilyPulse מזהה אוטומטית אם זה ילד או הורה שותף.</p></div>
         <div className="codeInput"><input value={joinCode} onChange={e=>setJoinCode(e.target.value.toUpperCase())} maxLength={8} placeholder="AB12CD34"/><button onClick={connectCode}>חבר</button></div>
