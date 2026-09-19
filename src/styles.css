@@ -56,3 +56,38 @@
 .childImageMarker.selected{
   box-shadow:0 0 0 3px #0284c7,0 6px 14px #0f172a38!important;
 }
+
+.childImageMarker{
+  border-radius:50%!important;
+  clip-path:circle(50% at 50% 50%)!important;
+  overflow:hidden!important;
+  object-fit:cover!important;
+  aspect-ratio:1/1!important;
+  border:2px solid #fff!important;
+  box-shadow:0 0 0 2px #38bdf8,0 4px 10px #0f172a30!important;
+}
+.childImageMarker.selected{
+  box-shadow:0 0 0 3px #0284c7,0 5px 12px #0f172a38!important;
+}
+.homePanel,.alertsPanel{background:#fff;border:1px solid #e2e8f0;border-radius:22px;padding:20px;box-shadow:0 10px 35px #0f172a08;margin-bottom:22px}
+.homePanelHeader{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.homePanelHeader h2{display:flex;align-items:center;gap:8px;margin:0 0 4px}
+.homePanelHeader h2 svg{width:20px;color:#0284c7}
+.homePanelHeader p{margin:0;color:#64748b;font-size:13px}
+.radiusControl{display:grid;gap:8px;margin-top:18px;color:#475569;font-size:13px;font-weight:700}
+.radiusControl input{width:100%}
+.childActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.homeBadge{font-size:11px;font-weight:800;border-radius:999px;padding:6px 9px}
+.homeBadge.inside{background:#ecfdf5;color:#047857}
+.homeBadge.outside{background:#fff7ed;color:#c2410c}
+.buzzButton{border:0;background:#fef3c7;color:#92400e;border-radius:12px;padding:9px 11px;font-weight:900;font-size:12px}
+.alertList{display:grid;gap:10px}
+.familyAlert{display:flex;align-items:center;gap:12px;border:1px solid #bae6fd;background:#f0f9ff;border-radius:16px;padding:13px}
+.familyAlert .grow{display:flex;flex-direction:column}
+.familyAlert .grow span{font-size:12px;color:#64748b;margin-top:2px}
+@media(max-width:720px){
+  .homePanelHeader{align-items:flex-start;flex-direction:column}
+  .homePanelHeader .primary,.homePanelHeader .secondary{width:100%;justify-content:center}
+  .childActions{width:100%}
+  .childActions .locate,.childActions .buzzButton{flex:1;justify-content:center}
+}
