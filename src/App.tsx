@@ -948,7 +948,7 @@ export default function App(){
   return <div className="appShell">
     <TopBar profile={profile} onLogout={logout} onSettings={()=>{setHomeDraft(home?{lat:home.lat,lng:home.lng,label:'בית'}:null);setSettingsOpen(true);}}/>
     <main className="dashboard">
-      <section className="hero parentHero"><div><span className="eyebrow">המשפחה שלי</span><h1>שלום, {profile.name}</h1><p>{children.length} ילדים · {parents.length} הורים מחוברים</p></div><div className="avatar big">{profile.photoURL?<img src={profile.photoURL}/>:profile.name[0]}</div></section>
+      <section className="hero parentHero"><div><h1>שלום, {profile.name}</h1><p>{children.length} ילדים · {parents.length} הורים</p></div><div className="avatar big">{profile.photoURL?<img src={profile.photoURL}/>:profile.name[0]}</div></section>
 
       {logoutEvents.length>0&&<section className="logoutNotices">
         <div className="sectionTitle"><h2>התנתקויות אחרונות</h2><span>{logoutEvents.length}</span></div>
@@ -987,10 +987,13 @@ export default function App(){
           <span><Plus/> הוספת ילד או הורה</span>
           <ChevronDown/>
         </button>
-        <div className="connectPanelBody">
-          <div className="connectIntro"><h2><Plus/> הוספת ילד או הורה</h2><p>הקלד קוד. FamilyPulse מזהה אוטומטית אם זה ילד או הורה שותף.</p></div>
-          <div className="codeInput"><input value={joinCode} onChange={e=>setJoinCode(e.target.value.toUpperCase())} maxLength={8} placeholder="AB12CD34"/><button onClick={connectCode}>חבר</button></div>
-        </div>
+        {connectOpen&&<div className="connectPanelBody">
+          <div className="connectIntro"><p>הקלד את קוד המשתמש שברצונך לצרף.</p></div>
+          <div className="codeInput">
+            <input value={joinCode} onChange={e=>setJoinCode(e.target.value.toUpperCase())} maxLength={8} placeholder="AB12CD34"/>
+            <button onClick={connectCode}>חבר</button>
+          </div>
+        </div>}
       </section>
       {message&&<div className="toast globalToast">{message}</div>}
       <section className="childrenSection"><div className="sectionTitle"><h2>הילדים</h2><span>{children.length}</span></div>
@@ -1004,18 +1007,16 @@ export default function App(){
             <div className="childCardTop">
               <div className="avatar">{child.photoURL?<img src={child.photoURL}/>:child.name[0]}</div>
               <div className="childCardInfo">
-                <div className="childNameRow">
-                  <b>{child.name}</b>
-                  <span className={online?'connectionDot online':'connectionDot'}>{online?'מחובר':'לא מחובר'}</span>
-                </div>
+                <b className="childName">{child.name}</b>
                 <span className="locationLine">{updating[child.uid]?'מעדכן מיקום…':childLocation?locationAge(childLocation.updatedAt):'אין עדיין מיקום'}</span>
                 {childLocation&&<small>דיוק כ־{Math.round(childLocation.accuracy)} מ׳ · {childLocation.source==='precise'?'מדויק':'מהיר'}</small>}
               </div>
             </div>
 
             <div className="childCardMeta">
+              <span className={online?'connectionDot online':'connectionDot'}>{online?'מחובר עכשיו':'לא מחובר'}</span>
               {home&&<span className={child.homeStatus==='inside'?'homeBadge inside':'homeBadge outside'}>
-                {child.homeStatus==='inside'?'בבית':child.homeStatus==='outside'?'מחוץ לבית':'מיקום בית לא ידוע'}
+                {child.homeStatus==='inside'?'בבית':child.homeStatus==='outside'?'מחוץ לבית':'סטטוס בית לא ידוע'}
               </span>}
               {alarmState&&<span className={`alarmState ${alarmState}`}>{buzzStatusLabel(alarmState)}</span>}
             </div>
@@ -1036,59 +1037,66 @@ export default function App(){
           </article>
         })}</div>}
       </section>
-      {children.length>0&&<section className="mapPanel">
-        <div className="mapHeader">
-          <div>
-            <h2>{selected?selected.name:'כל הילדים'}</h2>
-            <p>{selected&&locations[selected.uid]?`${locationAge(locations[selected.uid].updatedAt)} · דיוק כ־${Math.round(locations[selected.uid].accuracy)} מטר`:`${Object.keys(locations).length} מתוך ${children.length} מיקומים זמינים`}</p>
-          </div>
-          <div className="mapActions">
-            <button className="secondary compact" onClick={()=>{setSelected(null);setFitSignal(v=>v+1)}}><Maximize2/> הצג את כולם</button>
-            {selected&&<button className="primary compact" onClick={()=>requestLocation(selected)}><LocateFixed/> רענן מיקום</button>}
-          </div>
-        </div>
-        {Object.keys(locations).length>0?
-          <MapContainer center={[locations[Object.keys(locations)[0]].lat,locations[Object.keys(locations)[0]].lng]} zoom={13} scrollWheelZoom className="map">
-            <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
-            <MapViewport childrenList={children} locations={locations} selected={selected} fitSignal={fitSignal}/>
-            {home&&<>
-              <Circle center={[home.lat,home.lng]} radius={30} pathOptions={{fillOpacity:0.08}}/>
-              <Marker position={[home.lat,home.lng]} icon={createHomeMarkerIcon()} zIndexOffset={2000} interactive={false}/>
-            </>}
-            {children.map((child,index)=>{
-              const loc=locations[child.uid];
-              if(!loc) return null;
-
-              const position=getDisplayPosition(child,index,children,locations);
-              const markerIcon=createChildMarkerIcon(child,selected?.uid===child.uid);
-
-              return <Marker
-                key={child.uid}
-                position={position}
-                icon={markerIcon}
-                eventHandlers={{click:()=>setSelected(child)}}
-                zIndexOffset={selected?.uid===child.uid?1000:index}
-              >
-                <Popup>
-                  <div className="mapPopup" dir="rtl">
-                    <div className="mapPopupHeader">
-                      <div className="avatar">{child.photoURL?<img src={child.photoURL}/>:child.name[0]}</div>
-                      <div>
-                        <b>{child.name}</b>
-                        <small>{locationAge(loc.updatedAt)}</small>
+      {children.length>0&&(
+        Object.keys(locations).length>0
+          ? <section className="mapPanel">
+              <div className="mapHeader">
+                <div>
+                  <h2>{selected?selected.name:'מפת המשפחה'}</h2>
+                  <p>{selected&&locations[selected.uid]
+                    ? `${locationAge(locations[selected.uid].updatedAt)} · דיוק כ־${Math.round(locations[selected.uid].accuracy)} מטר`
+                    : `${Object.keys(locations).length} מתוך ${children.length} מיקומים זמינים`}</p>
+                </div>
+                <div className="mapActions">
+                  <button className="secondary compact" onClick={()=>{setSelected(null);setFitSignal(v=>v+1)}}><Maximize2/> הצג את כולם</button>
+                  {selected&&<button className="primary compact" onClick={()=>requestLocation(selected)}><LocateFixed/> רענן מיקום</button>}
+                </div>
+              </div>
+              <MapContainer center={[locations[Object.keys(locations)[0]].lat,locations[Object.keys(locations)[0]].lng]} zoom={13} scrollWheelZoom className="map">
+                <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
+                <MapViewport childrenList={children} locations={locations} selected={selected} fitSignal={fitSignal}/>
+                {home&&<>
+                  <Circle center={[home.lat,home.lng]} radius={30} pathOptions={{fillOpacity:0.08}}/>
+                  <Marker position={[home.lat,home.lng]} icon={createHomeMarkerIcon()} zIndexOffset={2000} interactive={false}/>
+                </>}
+                {children.map((child,index)=>{
+                  const loc=locations[child.uid];
+                  if(!loc) return null;
+                  const position=getDisplayPosition(child,index,children,locations);
+                  const markerIcon=createChildMarkerIcon(child,selected?.uid===child.uid);
+                  return <Marker
+                    key={child.uid}
+                    position={position}
+                    icon={markerIcon}
+                    eventHandlers={{click:()=>setSelected(child)}}
+                    zIndexOffset={selected?.uid===child.uid?1000:index}
+                  >
+                    <Popup>
+                      <div className="mapPopup" dir="rtl">
+                        <div className="mapPopupHeader">
+                          <div className="avatar">{child.photoURL?<img src={child.photoURL}/>:child.name[0]}</div>
+                          <div><b>{child.name}</b><small>{locationAge(loc.updatedAt)}</small></div>
+                        </div>
+                        <p>דיוק משוער: {Math.round(loc.accuracy)} מטר</p>
+                        <button className="locate" onClick={()=>requestLocation(child)}><LocateFixed/> רענן מיקום</button>
                       </div>
-                    </div>
-                    <p>דיוק משוער: {Math.round(loc.accuracy)} מטר</p>
-                    <button className="locate" onClick={()=>requestLocation(child)}>
-                      <LocateFixed/> רענן מיקום
-                    </button>
-                  </div>
-                </Popup>
-              </Marker>
-            })}
-          </MapContainer>:
-          <div className="mapPlaceholder"><MapPin/><span>ממתין למיקום הראשון של הילדים…</span></div>}
-      </section>}
+                    </Popup>
+                  </Marker>
+                })}
+              </MapContainer>
+            </section>
+          : <section className="noLocationCard">
+              <MapPin/>
+              <div>
+                <b>עדיין אין מיקום זמין</b>
+                <span>בקש מיקום מאחד הילדים כדי להציג את המפה.</span>
+              </div>
+              <button className="primary compact" onClick={()=>children.forEach(child=>void requestLocation(child))}>
+                <LocateFixed/> בקש מיקום
+              </button>
+            </section>
+      )}
+
       <section className="share"><Users/><div className="grow"><h2>הורה שותף</h2><p>הורה נוסף בוחר “אני הורה” ומקליד את הקוד שלך.</p></div><CodeCard code={profile.code} compact/>
       </section>
     </main>
