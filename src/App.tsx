@@ -4,7 +4,7 @@ import {
   collection, deleteDoc, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc
 } from 'firebase/firestore';
 import { Circle, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
-import { Baby, Copy, LocateFixed, MapPin, Plus, ShieldCheck, Smartphone, Users, Maximize2 } from 'lucide-react';
+import { Baby, Copy, LocateFixed, MapPin, Plus, ShieldCheck, Smartphone, Users, Maximize2, Settings, X, Home } from 'lucide-react';
 import { auth, db, ensureAuth, firebaseReady } from './firebase';
 import { divIcon, icon, latLngBounds } from 'leaflet';
 import { prepareProfilePhoto } from './profilePhoto';
@@ -37,8 +37,7 @@ export default function App(){
   const [logoutEvents,setLogoutEvents]=useState<LogoutEvent[]>([]);
   const [presence,setPresence]=useState<Record<string,Presence>>({});
   const [home,setHome]=useState<HomeConfig|null>(null);
-  const [homeRadius,setHomeRadius]=useState(150);
-  const [settingHome,setSettingHome]=useState(false);
+  const [settingsOpen,setSettingsOpen]=useState(false);
   const [alerts,setAlerts]=useState<FamilyAlert[]>([]);
   const requestStartedAt=useRef<Record<string,number>>({});
   const autoRequestedFamily=useRef<string>('');
@@ -55,22 +54,65 @@ export default function App(){
 
   useEffect(()=>{
     if(!profile?.familyId) return;
+
     return onSnapshot(collection(db,'families',profile.familyId,'members'),snap=>{
       const next=snap.docs.map(d=>d.data() as Member);
       setMembers(next);
+
+      if(profile.role==='parent'){
+        void Promise.allSettled(
+          next
+            .filter(member=>member.role==='child')
+            .map(async child=>{
+              if(child.active===false){
+                await deleteDoc(doc(db,'families',profile.familyId!,'members',child.uid));
+                setLocations(prev=>{
+                  const copy={...prev};
+                  delete copy[child.uid];
+                  return copy;
+                });
+                setPresence(prev=>{
+                  const copy={...prev};
+                  delete copy[child.uid];
+                  return copy;
+                });
+                if(selected?.uid===child.uid) setSelected(null);
+                return;
+              }
+
+              if(child.inviteCode){
+                const pair=await getDoc(doc(db,'pairCodes',child.inviteCode));
+                if(!pair.exists()){
+                  await deleteDoc(doc(db,'families',profile.familyId!,'members',child.uid));
+                  setLocations(prev=>{
+                    const copy={...prev};
+                    delete copy[child.uid];
+                    return copy;
+                  });
+                  setPresence(prev=>{
+                    const copy={...prev};
+                    delete copy[child.uid];
+                    return copy;
+                  });
+                  if(selected?.uid===child.uid) setSelected(null);
+                }
+              }
+            })
+        );
+      }
+
       if(selected && !next.some(m=>m.uid===selected.uid && m.active!==false)){
         setSelected(null);
       }
     });
-  },[profile?.familyId]);
+  },[profile?.familyId,profile?.role,selected?.uid]);
 
   useEffect(()=>{
     if(!profile?.familyId) return;
     return onSnapshot(doc(db,'families',profile.familyId),snap=>{
       const data=snap.data() as {home?:HomeConfig}|undefined;
       if(data?.home){
-        setHome(data.home);
-        setHomeRadius(data.home.radiusMeters||150);
+        setHome({...data.home,radiusMeters:30});
       }else{
         setHome(null);
       }
@@ -540,13 +582,13 @@ export default function App(){
       home:{
         lat,
         lng,
-        radiusMeters:homeRadius,
+        radiusMeters:30,
         updatedAt:serverTimestamp()
       }
     },{merge:true});
 
-    setSettingHome(false);
-    setMessage('מיקום הבית נשמר.');
+    setHome({lat,lng,radiusMeters:30});
+    setMessage('מיקום הבית נשמר עם רדיוס קבוע של 30 מטר.');
   }
 
   async function requestLocation(child:Member,focus=true){
@@ -607,7 +649,7 @@ export default function App(){
   </div>;
 
   return <div className="appShell">
-    <TopBar profile={profile} onLogout={logout}/>
+    <TopBar profile={profile} onLogout={logout} onSettings={()=>setSettingsOpen(true)}/>
     <main className="dashboard">
       <section className="hero"><div><span className="eyebrow">המשפחה שלי</span><h1>שלום, {profile.name}</h1><p>{children.length} ילדים · {parents.length} הורים מחוברים</p></div><div className="avatar big">{profile.photoURL?<img src={profile.photoURL}/>:profile.name[0]}</div></section>
 
@@ -648,22 +690,6 @@ export default function App(){
         <div className="codeInput"><input value={joinCode} onChange={e=>setJoinCode(e.target.value.toUpperCase())} maxLength={8} placeholder="AB12CD34"/><button onClick={connectCode}>חבר</button></div>
         {message&&<div className="toast">{message}</div>}
       </section>
-      <section className="homePanel">
-        <div className="homePanelHeader">
-          <div>
-            <h2><MapPin/> הבית</h2>
-            <p>{home?'הבית מוגדר. FamilyPulse מסמן לכל ילד אם הוא בבית או מחוץ לבית.':'עדיין לא הוגדר בית.'}</p>
-          </div>
-          <button className={settingHome?'primary compact':'secondary compact'} onClick={()=>setSettingHome(v=>!v)}>
-            <MapPin/> {settingHome?'לחץ על המפה כדי לבחור':'בחר בית על המפה'}
-          </button>
-        </div>
-        <label className="radiusControl">
-          <span>רדיוס הבית: {homeRadius} מטר</span>
-          <input type="range" min="50" max="500" step="25" value={homeRadius} onChange={e=>setHomeRadius(Number(e.target.value))}/>
-        </label>
-      </section>
-
       <section><div className="sectionTitle"><h2>הילדים</h2><span>{children.length}</span></div>
         {children.length===0?<div className="empty"><Baby/><h3>עוד אין ילדים מחוברים</h3><p>פתח FamilyPulse במכשיר הילד והקלד כאן את הקוד שלו.</p></div>:
         <div className="childrenGrid">{children.map(child=>{
@@ -704,8 +730,10 @@ export default function App(){
           <MapContainer center={[locations[Object.keys(locations)[0]].lat,locations[Object.keys(locations)[0]].lng]} zoom={13} scrollWheelZoom className="map">
             <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
             <MapViewport childrenList={children} locations={locations} selected={selected} fitSignal={fitSignal}/>
-            <HomeClickHandler enabled={settingHome} onPick={saveHome}/>
-            {home&&<Circle center={[home.lat,home.lng]} radius={home.radiusMeters} pathOptions={{fillOpacity:0.08}}/>}
+            {home&&<>
+              <Circle center={[home.lat,home.lng]} radius={30} pathOptions={{fillOpacity:0.08}}/>
+              <Marker position={[home.lat,home.lng]} icon={createHomeMarkerIcon()} zIndexOffset={2000}/>
+            </>}
             {children.map((child,index)=>{
               const loc=locations[child.uid];
               if(!loc) return null;
@@ -743,6 +771,46 @@ export default function App(){
       <section className="share"><Users/><div className="grow"><h2>הורה שותף</h2><p>הורה נוסף בוחר “אני הורה” ומקליד את הקוד שלך.</p></div><CodeCard code={profile.code} compact/>
       </section>
     </main>
+
+    {settingsOpen&&<div className="settingsOverlay" role="dialog" aria-modal="true">
+      <section className="settingsModal">
+        <header className="settingsHeader">
+          <div>
+            <span className="eyebrow">הגדרות</span>
+            <h2>הגדרות FamilyPulse</h2>
+          </div>
+          <button className="iconButton" onClick={()=>setSettingsOpen(false)} aria-label="סגור"><X/></button>
+        </header>
+
+        <div className="settingsSection">
+          <div className="settingsSectionTitle">
+            <Home/>
+            <div>
+              <h3>בית</h3>
+              <p>לחץ על המפה כדי לבחור את מיקום הבית. הטווח קבוע על 30 מטר.</p>
+            </div>
+          </div>
+
+          <div className="fixedRadius">רדיוס קבוע: <b>30 מטר</b></div>
+
+          <MapContainer
+            center={home?[home.lat,home.lng]:(Object.values(locations)[0]?[Object.values(locations)[0].lat,Object.values(locations)[0].lng]:[31.7683,35.2137])}
+            zoom={home?17:12}
+            scrollWheelZoom
+            className="settingsMap"
+          >
+            <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
+            <HomeClickHandler enabled onPick={saveHome}/>
+            {home&&<>
+              <Circle center={[home.lat,home.lng]} radius={30} pathOptions={{fillOpacity:0.1}}/>
+              <Marker position={[home.lat,home.lng]} icon={createHomeMarkerIcon()} zIndexOffset={2000}/>
+            </>}
+          </MapContainer>
+
+          <p className="settingsHint">{home?'הבית מוגדר. לחץ במקום אחר במפה כדי לשנות אותו.':'עדיין לא הוגדר בית.'}</p>
+        </div>
+      </section>
+    </div>}
   </div>;
 }
 
@@ -752,7 +820,7 @@ function CodeCard({code,title,compact=false}:{code:string;title?:string;compact?
   const copy=()=>navigator.clipboard.writeText(code);
   return <div className={compact?'codeCard compactCode':'codeCard'}>{title&&<span>{title}</span>}<strong>{code}</strong><button onClick={copy} aria-label="העתקת קוד"><Copy/></button></div>
 }
-function TopBar({profile,onLogout}:{profile:Profile;onLogout:()=>void}){return <header className="topbar"><div className="brand"><Logo/><b>FamilyPulse</b></div><div className="miniProfile"><span>{profile.role==='parent'?'הורה':'ילד/ה'}</span><div className="avatar tiny">{profile.photoURL?<img src={profile.photoURL}/>:profile.name[0]}</div><button className="logoutButton" onClick={onLogout}>התנתק</button></div></header>}
+function TopBar({profile,onLogout,onSettings}:{profile:Profile;onLogout:()=>void;onSettings?:()=>void}){return <header className="topbar"><div className="brand"><Logo/><b>FamilyPulse</b></div><div className="miniProfile"><span>{profile.role==='parent'?'הורה':'ילד/ה'}</span><div className="avatar tiny">{profile.photoURL?<img src={profile.photoURL}/>:profile.name[0]}</div>{onSettings&&<button className="settingsButton" onClick={onSettings}><Settings/> הגדרות</button>}<button className="logoutButton" onClick={onLogout}>התנתק</button></div></header>}
 
 
 function locationAge(updatedAt?:{seconds:number}){
@@ -834,6 +902,15 @@ function HomeClickHandler({enabled,onPick}:{enabled:boolean;onPick:(lat:number,l
     }
   });
   return null;
+}
+
+function createHomeMarkerIcon(){
+  return divIcon({
+    className:'homeMarkerHost',
+    html:'<div class="homeMarker"><span>⌂</span><b>בית</b></div>',
+    iconSize:[66,34],
+    iconAnchor:[33,17]
+  });
 }
 
 function createChildMarkerIcon(child:Member,selected:boolean){
