@@ -6,7 +6,7 @@ import {
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import { Baby, Copy, LocateFixed, MapPin, Plus, ShieldCheck, Smartphone, Users, Maximize2 } from 'lucide-react';
 import { auth, db, ensureAuth, firebaseReady } from './firebase';
-import { divIcon, latLngBounds } from 'leaflet';
+import { divIcon, icon, latLngBounds } from 'leaflet';
 import { prepareProfilePhoto } from './profilePhoto';
 
 type Role='parent'|'child';
@@ -98,6 +98,7 @@ export default function App(){
         }
 
         if(familyId){
+          localStorage.setItem('familypulse.familyId',familyId);
           await setDoc(doc(db,'presence',profile.uid),{
             uid:profile.uid,
             familyId,
@@ -336,52 +337,67 @@ export default function App(){
 
   async function logout(){
     if(profile?.role==='child'){
-      setMessage('שומר מיקום אחרון לפני ההתנתקות…');
+      setMessage('שומר את מצב ההתנתקות והמיקום האחרון…');
+
       try{
-        const link=await getDoc(doc(db,'childLinks',profile.uid));
-        let familyId=link.exists() ? String(link.data().familyId||'') : '';
+        let familyId=localStorage.getItem('familypulse.familyId')||'';
+
+        if(!familyId){
+          const link=await getDoc(doc(db,'childLinks',profile.uid));
+          if(link.exists()) familyId=String(link.data().familyId||'');
+        }
 
         if(!familyId){
           const lastRequest=await getDoc(doc(db,'locationRequests',profile.uid));
           if(lastRequest.exists()) familyId=String(lastRequest.data().familyId||'');
         }
 
-        if(familyId){
-          await setDoc(doc(db,'presence',profile.uid),{
-            uid:profile.uid,
-            familyId,
-            online:false,
-            lastSeen:serverTimestamp()
-          },{merge:true});
-
-          const pos=await getLogoutLocation();
-          const eventData:Record<string,unknown>={
-            childUid:profile.uid,
-            name:profile.name,
-            photoURL:profile.photoURL||'',
-            familyId,
-            hasLocation:Boolean(pos),
-            loggedOutAt:serverTimestamp()
-          };
-
-          if(pos){
-            eventData.lat=pos.coords.latitude;
-            eventData.lng=pos.coords.longitude;
-            eventData.accuracy=pos.coords.accuracy;
-          }
-
-          await setDoc(
-            doc(db,'families',familyId,'logoutEvents',`${profile.uid}-${Date.now()}`),
-            eventData
-          );
-
-          await updateDoc(doc(db,'families',familyId,'members',profile.uid),{
-            active:false,
-            disconnectedAt:serverTimestamp()
-          });
+        if(!familyId){
+          throw new Error('לא ניתן לזהות את המשפחה של הילד. פתח את FamilyPulse אצל ההורה, רענן מיקום פעם אחת ונסה שוב.');
         }
+
+        localStorage.setItem('familypulse.familyId',familyId);
+
+        const pos=await getLogoutLocation();
+
+        await setDoc(doc(db,'presence',profile.uid),{
+          uid:profile.uid,
+          familyId,
+          online:false,
+          lastSeen:serverTimestamp()
+        },{merge:true});
+
+        const eventData:Record<string,unknown>={
+          childUid:profile.uid,
+          name:profile.name,
+          photoURL:profile.photoURL||'',
+          familyId,
+          hasLocation:Boolean(pos),
+          loggedOutAt:serverTimestamp()
+        };
+
+        if(pos){
+          eventData.lat=pos.coords.latitude;
+          eventData.lng=pos.coords.longitude;
+          eventData.accuracy=pos.coords.accuracy;
+        }
+
+        await setDoc(
+          doc(db,'families',familyId,'logoutEvents',`${profile.uid}-${Date.now()}`),
+          eventData
+        );
+
+        await updateDoc(doc(db,'families',familyId,'members',profile.uid),{
+          active:false,
+          disconnectedAt:serverTimestamp()
+        });
+
+        localStorage.removeItem('familypulse.familyId');
       }catch(err){
-        console.error('Could not save child logout event',err);
+        console.error('Child logout failed',err);
+        const detail=err instanceof Error?err.message:'שגיאה לא ידועה';
+        setMessage(`ההתנתקות נכשלה: ${detail}`);
+        return;
       }
     }
 
@@ -582,13 +598,20 @@ function presenceText(p?:Presence){
 
 function createChildMarkerIcon(child:Member,selected:boolean){
   const size=selected?38:32;
-  const image=child.photoURL
-    ? `<img src="${child.photoURL}" alt="">`
-    : `<span>${escapeHtml(child.name.trim().charAt(0)||'?')}</span>`;
+
+  if(child.photoURL){
+    return icon({
+      iconUrl:child.photoURL,
+      iconSize:[size,size],
+      iconAnchor:[size/2,size/2],
+      popupAnchor:[0,-size/2],
+      className:selected?'childImageMarker selected':'childImageMarker'
+    });
+  }
 
   return divIcon({
     className:'childPhotoMarkerHost',
-    html:`<div class="childPhotoMarker${selected?' selected':''}">${image}</div>`,
+    html:`<div class="childPhotoMarker${selected?' selected':''}"><span>${escapeHtml(child.name.trim().charAt(0)||'?')}</span></div>`,
     iconSize:[size,size],
     iconAnchor:[size/2,size/2],
     popupAnchor:[0,-size/2]
