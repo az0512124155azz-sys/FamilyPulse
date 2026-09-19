@@ -163,3 +163,384 @@
 .googlePrimary .googleMark{background:#fff}
 .onboardingToast{margin-top:12px}
 .buzzStatus{display:block;width:100%;font-size:11px;color:#64748b!important;margin-top:4px}
+
+
+/* ===== FamilyPulse mobile redesign ===== */
+@media (max-width:720px){
+  html,body,#root{width:100%;max-width:100%;overflow-x:hidden}
+  body{background:#f4f7fb}
+  button{min-height:44px}
+  input{font-size:16px}
+
+  .topbar{
+    height:60px;
+    padding:0 12px;
+    gap:8px;
+    box-shadow:0 1px 0 #e2e8f0;
+  }
+  .brand{gap:7px;min-width:0}
+  .brand .logo{width:32px;height:32px;border-radius:10px}
+  .brand b{font-size:15px;white-space:nowrap}
+  .miniProfile{gap:6px;min-width:0}
+  .miniProfile .avatar.tiny{width:32px;height:32px}
+  .settingsButton,.logoutButton{
+    width:38px;
+    height:38px;
+    min-height:38px;
+    padding:0;
+    display:grid;
+    place-items:center;
+    border-radius:11px;
+    flex:none;
+  }
+  .settingsButton{font-size:0}
+  .logoutButton{font-size:0;position:relative}
+  .logoutButton::after{content:'↪';font-size:18px;line-height:1;color:#475569}
+
+  .dashboard{
+    width:100%;
+    margin:0;
+    padding:18px 12px 92px;
+  }
+
+  .hero{
+    margin:0 2px 16px;
+    align-items:flex-start;
+  }
+  .hero h1{font-size:24px;line-height:1.15;margin-top:2px}
+  .hero p{font-size:13px;line-height:1.45}
+  .eyebrow{font-size:11px}
+
+  .connectPanel,.mapPanel,.share,.empty,.logoutNotices,.alertsPanel{
+    border-radius:18px;
+    box-shadow:none;
+  }
+
+  .connectPanel{
+    display:block;
+    padding:16px;
+    margin-bottom:20px;
+  }
+  .connectPanel h2{font-size:16px}
+  .connectPanel p{font-size:12px;line-height:1.45;margin-bottom:12px}
+  .codeInput{
+    display:grid;
+    grid-template-columns:1fr auto;
+    gap:8px;
+  }
+  .codeInput input{
+    min-width:0;
+    padding:12px;
+    border-radius:12px;
+  }
+  .codeInput button{
+    padding:0 14px;
+    border-radius:12px;
+  }
+
+  .sectionTitle{
+    margin:0 4px 10px;
+  }
+  .sectionTitle h2{font-size:18px}
+
+  .childrenGrid{
+    grid-template-columns:1fr;
+    gap:10px;
+  }
+  .childCard{
+    display:grid;
+    grid-template-columns:52px minmax(0,1fr);
+    gap:10px 12px;
+    align-items:start;
+    padding:14px;
+    border-radius:17px;
+  }
+  .childCard>.avatar{
+    width:52px;
+    height:52px;
+    grid-row:1 / span 2;
+  }
+  .childCard>.grow{
+    min-width:0;
+    padding-top:1px;
+  }
+  .childCard>.grow>b{
+    font-size:16px;
+    line-height:1.25;
+  }
+  .childCard>.grow>span,
+  .childCard>.grow>small{
+    font-size:11px;
+    line-height:1.35;
+    white-space:normal;
+  }
+
+  .childActions{
+    grid-column:1 / -1;
+    width:100%;
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:8px;
+    align-items:stretch;
+  }
+  .childActions .homeBadge{
+    grid-column:1 / -1;
+    justify-self:start;
+    padding:5px 9px;
+  }
+  .childActions .locate,
+  .childActions .buzzButton{
+    width:100%;
+    min-height:44px;
+    margin:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:12px;
+    padding:9px 8px;
+    font-size:12px;
+  }
+  .childActions .buzzStatus{
+    grid-column:1 / -1;
+    margin:0;
+    padding:7px 9px;
+    border-radius:10px;
+    background:#f8fafc;
+  }
+
+  .mapPanel{
+    margin-top:16px;
+    overflow:hidden;
+  }
+  .mapHeader{
+    padding:14px;
+    display:grid;
+    grid-template-columns:1fr;
+    gap:10px;
+  }
+  .mapHeader h2{font-size:17px}
+  .mapHeader p{font-size:11px;line-height:1.4}
+  .mapActions{
+    width:100%;
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:8px;
+  }
+  .mapActions .primary,.mapActions .secondary{
+    width:100%;
+    min-height:42px;
+    justify-content:center;
+    padding:8px;
+    font-size:12px;
+  }
+  .map{
+    height:46vh;
+    min-height:340px;
+    max-height:500px;
+  }
+  .mapPlaceholder{height:300px}
+
+  .share{
+    margin-top:16px;
+    padding:15px;
+    display:grid;
+    grid-template-columns:36px minmax(0,1fr);
+    gap:8px 10px;
+    align-items:start;
+  }
+  .share>svg{width:20px;height:20px;margin-top:2px}
+  .share .grow h2{font-size:15px}
+  .share .grow p{font-size:11px;line-height:1.45}
+  .share .compactCode{
+    grid-column:1 / -1;
+    width:100%;
+    margin-top:4px;
+    justify-content:space-between;
+  }
+
+  .logoutNotices,.alertsPanel{padding:14px;margin-bottom:14px}
+  .logoutNotice,.familyAlert{
+    padding:11px;
+    gap:10px;
+    border-radius:13px;
+  }
+
+  .settingsOverlay{
+    padding:0;
+    display:block;
+    background:#fff;
+    backdrop-filter:none;
+    overflow:auto;
+  }
+  .settingsModal{
+    width:100%;
+    min-height:100dvh;
+    max-height:none;
+    border-radius:0;
+    box-shadow:none;
+    padding:0 12px 28px;
+    overflow:visible;
+  }
+  .settingsHeader{
+    position:sticky;
+    top:0;
+    z-index:1002;
+    background:#fff;
+    margin:0 -12px 14px;
+    padding:12px;
+    border-bottom:1px solid #e2e8f0;
+  }
+  .settingsHeader h2{font-size:20px}
+  .settingsHeader .eyebrow{display:none}
+  .iconButton{
+    width:40px;height:40px;min-height:40px;
+  }
+  .settingsSection{
+    padding:14px;
+    border-radius:16px;
+  }
+  .settingsSectionTitle{gap:8px}
+  .settingsSectionTitle h3{font-size:17px}
+  .settingsSectionTitle p{font-size:11px;line-height:1.45}
+  .fixedRadius{font-size:11px;padding:6px 9px}
+
+  .homeSearchRow{
+    grid-template-columns:1fr;
+    gap:8px;
+  }
+  .homeSearchRow input,
+  .homeSearchRow .primary,
+  .homeSearchRow .secondary{
+    width:100%;
+    min-height:46px;
+  }
+  .addressResult{
+    padding:10px;
+    border-radius:11px;
+  }
+  .settingsMap{
+    height:42vh;
+    min-height:300px;
+    max-height:430px;
+    border-radius:14px;
+  }
+  .homeDraftBar{
+    margin-top:10px;
+    padding:11px;
+    gap:10px;
+    border-radius:13px;
+  }
+  .homeDraftBar .primary{
+    min-height:46px;
+  }
+
+  .childMain{
+    width:100%;
+    padding:32px 14px 80px;
+  }
+  .pulseOrb{
+    width:76px;height:76px;
+    box-shadow:0 0 0 12px #e0f2fe55,0 0 0 24px #e0f2fe28;
+  }
+  .pulseOrb svg{width:34px;height:34px}
+  .childMain h1{
+    margin:38px 0 6px;
+    font-size:25px;
+  }
+  .childMain>p{
+    font-size:13px;
+    line-height:1.55;
+    margin:0 auto 18px;
+    max-width:380px;
+  }
+  .childMain .codeCard{
+    margin-top:14px;
+    padding:13px;
+    border-radius:15px;
+  }
+  .codeCard strong{font-size:18px}
+  .soundSetup{
+    margin-top:12px;
+    padding:12px;
+    border-radius:14px;
+    display:grid;
+    grid-template-columns:30px 1fr;
+    gap:8px 10px;
+  }
+  .soundSetup>svg{width:20px}
+  .soundSetup .grow b{font-size:14px}
+  .soundSetup .grow span{font-size:11px;line-height:1.4}
+  .soundSetup .primary{
+    grid-column:1 / -1;
+    width:100%;
+    min-height:44px;
+  }
+  .infoBox{
+    margin-top:12px;
+    padding:11px;
+    font-size:11px;
+    border-radius:13px;
+  }
+
+  .onboarding{
+    padding:18px 14px 34px;
+    justify-content:flex-start;
+    padding-top:max(34px,env(safe-area-inset-top));
+  }
+  .onboarding .logo{margin-top:8px}
+  .onboarding h1{
+    font-size:30px;
+    margin-top:14px;
+  }
+  .lead{
+    font-size:13px;
+    margin-bottom:22px;
+  }
+  .roleGrid{gap:10px}
+  .roleCard{
+    padding:18px;
+    border-radius:18px;
+    gap:8px;
+  }
+  .roleCard b{font-size:18px}
+  .roleCard span{font-size:12px}
+  .setupCard,.googleLinkCard{
+    width:100%;
+    max-width:520px;
+    padding:18px;
+    border-radius:20px;
+  }
+  .googleLinkCard h2{font-size:22px}
+  .googleLinkCard>p{font-size:13px}
+  .googlePrimary,.googleExistingButton{
+    width:100%;
+    min-height:48px;
+    border-radius:13px;
+  }
+
+  .toast{
+    font-size:12px;
+    line-height:1.45;
+    padding:10px;
+  }
+
+  .leaflet-control-zoom a{
+    width:38px!important;
+    height:38px!important;
+    line-height:38px!important;
+  }
+  .leaflet-popup-content-wrapper{
+    max-width:calc(100vw - 40px);
+  }
+}
+
+/* Small phones */
+@media (max-width:390px){
+  .dashboard{padding-left:9px;padding-right:9px}
+  .topbar{padding-left:9px;padding-right:9px}
+  .brand b{font-size:14px}
+  .childActions{grid-template-columns:1fr}
+  .mapActions{grid-template-columns:1fr}
+  .hero h1{font-size:22px}
+  .connectPanel,.childCard,.share{padding:12px}
+}
