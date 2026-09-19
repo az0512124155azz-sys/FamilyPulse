@@ -1007,3 +1007,177 @@
   .childActions{grid-template-columns:1fr!important}
   .map{height:320px!important;min-height:320px!important;max-height:320px!important}
 }
+
+
+/* ===== Final mobile structure cleanup ===== */
+.noLocationCard{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  background:#fff;
+  border:1px solid #e2e8f0;
+  border-radius:16px;
+  padding:14px;
+}
+.noLocationCard>svg{width:24px;height:24px;color:#0284c7;flex:none}
+.noLocationCard>div{display:flex;flex-direction:column;min-width:0;flex:1}
+.noLocationCard>div b{font-size:14px}
+.noLocationCard>div span{font-size:11px;color:#64748b;margin-top:2px}
+.noLocationCard .primary{flex:none}
+
+@media(max-width:720px){
+  .dashboard{
+    gap:12px!important;
+    padding-top:12px!important;
+  }
+
+  .parentHero{
+    padding:2px 2px 4px!important;
+    margin:0!important;
+  }
+  .parentHero h1{
+    font-size:21px!important;
+    margin:0!important;
+  }
+  .parentHero p{
+    font-size:11px!important;
+    margin:3px 0 0!important;
+  }
+  .parentHero .avatar.big{display:none!important}
+
+  .connectPanel{
+    margin:0!important;
+    border-radius:14px!important;
+  }
+  .connectPanelToggle{
+    min-height:50px!important;
+    padding:0 13px!important;
+    font-size:14px!important;
+  }
+  .connectPanelBody{
+    display:block!important;
+    padding:0 13px 13px!important;
+  }
+  .connectIntro p{
+    font-size:11px!important;
+    margin-bottom:8px!important;
+  }
+
+  .childrenSection>.sectionTitle{
+    margin-bottom:8px!important;
+  }
+  .childrenSection>.sectionTitle h2{
+    font-size:19px!important;
+  }
+
+  .childCard{
+    padding:13px!important;
+    gap:10px!important;
+  }
+  .childCardTop{
+    grid-template-columns:48px minmax(0,1fr)!important;
+    gap:10px!important;
+  }
+  .childCardTop>.avatar{
+    width:48px!important;
+    height:48px!important;
+  }
+  .childName{
+    display:block;
+    font-size:16px!important;
+    line-height:1.2!important;
+    margin:0!important;
+  }
+  .locationLine{
+    font-size:11px!important;
+    margin-top:3px!important;
+  }
+  .childCardInfo small{
+    font-size:10px!important;
+    margin-top:3px!important;
+  }
+  .childCardMeta{
+    display:flex!important;
+    gap:6px!important;
+    flex-wrap:wrap!important;
+  }
+  .connectionDot,.homeBadge,.alarmState{
+    font-size:9px!important;
+    padding:4px 7px!important;
+    line-height:1.2!important;
+  }
+  .childActions{
+    grid-template-columns:1fr 1fr!important;
+    gap:7px!important;
+  }
+  .childActions .buzzButton,
+  .childActions .locate{
+    min-height:42px!important;
+    font-size:11px!important;
+    padding:8px 6px!important;
+  }
+
+  .noLocationCard{
+    display:grid!important;
+    grid-template-columns:24px minmax(0,1fr)!important;
+    gap:10px!important;
+    padding:13px!important;
+    border-radius:14px!important;
+  }
+  .noLocationCard .primary{
+    grid-column:1 / -1;
+    width:100%;
+    min-height:42px;
+    justify-content:center;
+    margin-top:2px;
+  }
+
+  .mapPanel{
+    border-radius:14px!important;
+  }
+  .mapHeader{
+    padding:12px!important;
+    gap:8px!important;
+  }
+  .mapHeader h2{font-size:17px!important}
+  .mapHeader p{font-size:11px!important}
+  .map{
+    height:320px!important;
+    min-height:320px!important;
+    max-height:320px!important;
+  }
+
+  .share{
+    padding:13px!important;
+    border-radius:14px!important;
+  }
+  .share .grow h2{font-size:14px!important}
+  .share .grow p{font-size:10px!important}
+  .share .compactCode{margin-top:2px!important}
+
+  .alertsPanel,.logoutNotices{
+    padding:12px!important;
+    border-radius:14px!important;
+  }
+
+  .topbar{
+    height:60px!important;
+  }
+  .brand b{font-size:16px!important}
+  .settingsButton,.logoutButton{
+    width:36px!important;
+    height:36px!important;
+    min-height:36px!important;
+  }
+  .miniProfile .avatar.tiny{
+    width:32px!important;
+    height:32px!important;
+  }
+}
+
+@media(max-width:390px){
+  .dashboard{padding-left:8px!important;padding-right:8px!important}
+  .childActions{grid-template-columns:1fr!important}
+  .codeInput{grid-template-columns:1fr!important}
+  .codeInput button{width:100%!important}
+}
