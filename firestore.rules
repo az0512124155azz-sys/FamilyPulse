@@ -17,8 +17,18 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
-      allow read, create, update, delete:
+      allow read, create, update:
         if signedIn() && request.auth.uid == uid;
+
+      allow delete:
+        if signedIn() && (
+          request.auth.uid == uid
+          || (
+            resource.data.role == 'child'
+            && resource.data.familyId != null
+            && isParent(resource.data.familyId)
+          )
+        );
     }
 
     match /pairCodes/{code} {
@@ -27,7 +37,13 @@ service cloud.firestore {
       allow create, update:
         if signedIn() && request.resource.data.uid == request.auth.uid;
       allow delete:
-        if signedIn() && resource.data.uid == request.auth.uid;
+        if signedIn() && (
+          resource.data.uid == request.auth.uid
+          || (
+            resource.data.familyId != null
+            && isParent(resource.data.familyId)
+          )
+        );
     }
 
     match /childLinks/{uid} {
@@ -40,7 +56,10 @@ service cloud.firestore {
         && isParent(request.resource.data.familyId);
 
       allow delete:
-        if signedIn() && request.auth.uid == uid;
+        if signedIn() && (
+          request.auth.uid == uid
+          || isParent(resource.data.familyId)
+        );
     }
 
     match /families/{familyId} {
@@ -133,7 +152,10 @@ service cloud.firestore {
         );
 
       allow delete:
-        if signedIn() && request.auth.uid == childUid;
+        if signedIn() && (
+          request.auth.uid == childUid
+          || isParent(resource.data.familyId)
+        );
     }
 
     match /presence/{childUid} {
@@ -147,7 +169,10 @@ service cloud.firestore {
         && request.resource.data.uid == childUid;
 
       allow delete:
-        if signedIn() && request.auth.uid == childUid;
+        if signedIn() && (
+          request.auth.uid == childUid
+          || isParent(resource.data.familyId)
+        );
     }
 
     match /locations/{childUid} {
@@ -159,7 +184,10 @@ service cloud.firestore {
         && isFamilyMember(resource.data.familyId);
 
       allow delete:
-        if signedIn() && request.auth.uid == childUid;
+        if signedIn() && (
+          request.auth.uid == childUid
+          || isParent(resource.data.familyId)
+        );
     }
 
     match /buzzerCommands/{childUid} {
@@ -177,7 +205,10 @@ service cloud.firestore {
         );
 
       allow delete:
-        if signedIn() && request.auth.uid == childUid;
+        if signedIn() && (
+          request.auth.uid == childUid
+          || isParent(resource.data.familyId)
+        );
     }
   }
 }
