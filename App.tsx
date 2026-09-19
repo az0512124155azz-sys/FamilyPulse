@@ -155,6 +155,21 @@ export default function App(){
   },[profile]);
 
   useEffect(()=>{
+    if(profile?.role!=='parent' || !profile.familyId || children.length===0) return;
+
+    // Repair links for children that were connected before childLinks was introduced.
+    // This makes logout detection work for existing families too.
+    Promise.allSettled(children.map(child=>
+      setDoc(doc(db,'childLinks',child.uid),{
+        uid:child.uid,
+        familyId:profile.familyId,
+        linkedBy:profile.uid,
+        linkedAt:serverTimestamp()
+      },{merge:true})
+    )).catch(()=>{});
+  },[profile?.role,profile?.familyId,children.map(c=>c.uid).join('|')]);
+
+  useEffect(()=>{
     if(profile?.role!=='parent' || children.length===0) return;
 
     const unsubs=children.map(child=>
@@ -324,7 +339,15 @@ export default function App(){
 
       try{
         const link=await getDoc(doc(db,'childLinks',profile.uid));
-        const familyId=link.exists() ? String(link.data().familyId||'') : '';
+        let familyId=link.exists() ? String(link.data().familyId||'') : '';
+
+        // Backward-compatible fallback for children connected before childLinks existed.
+        if(!familyId){
+          const lastRequest=await getDoc(doc(db,'locationRequests',profile.uid));
+          if(lastRequest.exists()){
+            familyId=String(lastRequest.data().familyId||'');
+          }
+        }
 
         if(familyId){
           const pos=await getLogoutLocation();
@@ -344,8 +367,9 @@ export default function App(){
             eventData.accuracy=pos.coords.accuracy;
           }
 
+          const eventId=`${profile.uid}-${Date.now()}`;
           await setDoc(
-            doc(db,'families',familyId,'logoutEvents',profile.uid),
+            doc(db,'families',familyId,'logoutEvents',eventId),
             eventData
           );
 

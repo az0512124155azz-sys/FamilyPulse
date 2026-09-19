@@ -1,34 +1,41 @@
-FamilyPulse - updated files
-===========================
+FamilyPulse updated files v2
+============================
 
-Replace these files in your repository:
-
+Replace ALL THREE files in your project:
 1. src/App.tsx
 2. src/styles.css
 3. firestore.rules
 
-What changed
-------------
-- Child markers on the map are now the child's profile photo INSIDE the circular marker.
-- If no profile photo exists, the first letter of the child's name is shown.
-- Clicking a marker opens a compact child card with name, update time, accuracy, and refresh button.
-- Very close markers are slightly separated visually so multiple children can still be selected.
-- When a child presses "התנתק":
-  * FamilyPulse first tries to obtain a fresh last location.
-  * A logout event is saved for the family.
-  * The child is marked inactive and disappears from the parent's active children list.
-  * The parent sees an in-app logout notice with last location, time, and accuracy when available.
-  * If Web notification permission was already granted, FamilyPulse also tries to show a system Web notification.
-- Parent can press "אפשר התראות" to grant Web notification permission.
-- Reconnecting the same child code marks the child active again.
-- Location requests remain fast-first, then precise.
+Main fixes in v2
+----------------
+1. NO BLUE DOTS:
+   - The Leaflet marker itself is now the child's profile photo.
+   - There is no CircleMarker and no permanent name/photo badge next to it.
+   - If there is no photo, the marker shows the first letter of the child's name.
+
+2. Existing children logout detection:
+   - Parents automatically repair/create childLinks for children already connected before this feature existed.
+   - On child logout, FamilyPulse first checks childLinks.
+   - If childLinks is missing, it falls back to the child's last locationRequest to recover familyId.
+   - Logout saves a fresh last-known position when possible.
+   - The child's family member record is immediately updated to active=false.
+   - Parent active-child list filters active=false, so the child disappears right away.
+   - Parent receives an in-app logout notice with last location when available.
+
+3. Repeated logout history:
+   - Logout event document IDs include a timestamp, so repeated logout events are not overwritten.
 
 IMPORTANT
 ---------
-After replacing firestore.rules in the repo, you MUST also publish the updated rules in Firebase Firestore -> Rules.
-Vercel deployment alone does not publish Firestore security rules.
+After replacing firestore.rules in GitHub, also open:
+Firebase -> Firestore Database -> Rules
 
-This version cannot guarantee a push notification while the PWA is completely closed on iPhone.
-That requires the planned native/Capacitor layer with APNs/background capabilities.
+Paste the updated firestore.rules and click Publish.
 
-Logout location also depends on iOS/browser location permission. If location is blocked, logout still works but the event is saved without coordinates.
+If Vercel is showing the old map after deployment:
+- Confirm the deployment was built from the commit containing this v2 App.tsx.
+- Hard refresh the page (Ctrl+F5 on Windows).
+- On mobile, fully close the installed PWA/browser and reopen it.
+- If using an installed PWA, its Service Worker may briefly keep an older bundle; reopening after deployment normally refreshes it.
+
+The logout event can only capture location if the device still grants location permission.
