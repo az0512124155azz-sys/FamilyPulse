@@ -4,7 +4,7 @@ import {
   collection, deleteDoc, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc
 } from 'firebase/firestore';
 import { Circle, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
-import { Baby, Copy, LocateFixed, MapPin, Plus, ShieldCheck, Smartphone, Users, Maximize2, Settings, X, Home } from 'lucide-react';
+import { Baby, Copy, LocateFixed, MapPin, Plus, ShieldCheck, Smartphone, Users, Maximize2, Settings, X, Home, LogOut, ChevronDown } from 'lucide-react';
 import { auth, db, ensureAuth, firebaseReady } from './firebase';
 import { divIcon, icon, latLngBounds } from 'leaflet';
 import { prepareProfilePhoto } from './profilePhoto';
@@ -49,6 +49,7 @@ export default function App(){
   const [googleLinked,setGoogleLinked]=useState(false);
   const [googleBusy,setGoogleBusy]=useState(false);
   const [buzzStatus,setBuzzStatus]=useState<Record<string,string>>({});
+  const [connectOpen,setConnectOpen]=useState(false);
   const alarmAudioRef=useRef<HTMLAudioElement|null>(null);
   const alarmStopTimerRef=useRef<number|undefined>(undefined);
   const lastBuzzCommandRef=useRef('');
@@ -947,7 +948,7 @@ export default function App(){
   return <div className="appShell">
     <TopBar profile={profile} onLogout={logout} onSettings={()=>{setHomeDraft(home?{lat:home.lat,lng:home.lng,label:'בית'}:null);setSettingsOpen(true);}}/>
     <main className="dashboard">
-      <section className="hero"><div><span className="eyebrow">המשפחה שלי</span><h1>שלום, {profile.name}</h1><p>{children.length} ילדים · {parents.length} הורים מחוברים</p></div><div className="avatar big">{profile.photoURL?<img src={profile.photoURL}/>:profile.name[0]}</div></section>
+      <section className="hero parentHero"><div><span className="eyebrow">המשפחה שלי</span><h1>שלום, {profile.name}</h1><p>{children.length} ילדים · {parents.length} הורים מחוברים</p></div><div className="avatar big">{profile.photoURL?<img src={profile.photoURL}/>:profile.name[0]}</div></section>
 
       {logoutEvents.length>0&&<section className="logoutNotices">
         <div className="sectionTitle"><h2>התנתקויות אחרונות</h2><span>{logoutEvents.length}</span></div>
@@ -981,11 +982,17 @@ export default function App(){
         </div>
       </section>}
 
-      <section className="connectPanel">
-        <div><h2><Plus/> הוספת ילד או הורה</h2><p>הקלד קוד. FamilyPulse מזהה אוטומטית אם זה ילד או הורה שותף.</p></div>
-        <div className="codeInput"><input value={joinCode} onChange={e=>setJoinCode(e.target.value.toUpperCase())} maxLength={8} placeholder="AB12CD34"/><button onClick={connectCode}>חבר</button></div>
-        {message&&<div className="toast">{message}</div>}
+      <section className={connectOpen?'connectPanel open':'connectPanel'}>
+        <button className="connectPanelToggle" onClick={()=>setConnectOpen(v=>!v)}>
+          <span><Plus/> הוספת ילד או הורה</span>
+          <ChevronDown/>
+        </button>
+        <div className="connectPanelBody">
+          <div className="connectIntro"><h2><Plus/> הוספת ילד או הורה</h2><p>הקלד קוד. FamilyPulse מזהה אוטומטית אם זה ילד או הורה שותף.</p></div>
+          <div className="codeInput"><input value={joinCode} onChange={e=>setJoinCode(e.target.value.toUpperCase())} maxLength={8} placeholder="AB12CD34"/><button onClick={connectCode}>חבר</button></div>
+        </div>
       </section>
+      {message&&<div className="toast globalToast">{message}</div>}
       <section className="childrenSection"><div className="sectionTitle"><h2>הילדים</h2><span>{children.length}</span></div>
         {children.length===0?<div className="empty"><Baby/><h3>עוד אין ילדים מחוברים</h3><p>פתח FamilyPulse במכשיר הילד והקלד כאן את הקוד שלו.</p></div>:
         <div className="childrenGrid">{children.map(child=>{
@@ -1174,7 +1181,7 @@ function CodeCard({code,title,compact=false}:{code:string;title?:string;compact?
   const copy=()=>navigator.clipboard.writeText(code);
   return <div className={compact?'codeCard compactCode':'codeCard'}>{title&&<span>{title}</span>}<strong>{code}</strong><button onClick={copy} aria-label="העתקת קוד"><Copy/></button></div>
 }
-function TopBar({profile,onLogout,onSettings}:{profile:Profile;onLogout:()=>void;onSettings?:()=>void}){return <header className="topbar"><div className="brand"><Logo/><b>FamilyPulse</b></div><div className="miniProfile"><span>{profile.role==='parent'?'הורה':'ילד/ה'}</span><div className="avatar tiny">{profile.photoURL?<img src={profile.photoURL}/>:profile.name[0]}</div>{onSettings&&<button className="settingsButton" onClick={onSettings}><Settings/> הגדרות</button>}<button className="logoutButton" onClick={onLogout}>התנתק</button></div></header>}
+function TopBar({profile,onLogout,onSettings}:{profile:Profile;onLogout:()=>void;onSettings?:()=>void}){return <header className="topbar"><div className="brand"><Logo/><b>FamilyPulse</b></div><div className="miniProfile"><span className="profileRole">{profile.role==='parent'?'הורה':'ילד/ה'}</span><div className="avatar tiny">{profile.photoURL?<img src={profile.photoURL}/>:profile.name[0]}</div>{onSettings&&<button className="settingsButton" onClick={onSettings} aria-label="הגדרות"><Settings/><span>הגדרות</span></button>}<button className="logoutButton" onClick={onLogout} aria-label="התנתק"><LogOut/><span>התנתק</span></button></div></header>}
 
 
 function locationAge(updatedAt?:{seconds:number}){
