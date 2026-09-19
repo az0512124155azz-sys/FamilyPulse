@@ -4,12 +4,12 @@ import { getFirestore, type Firestore } from 'firebase/firestore';
 import { getStorage, type FirebaseStorage } from 'firebase/storage';
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyCX-A4X8yYPbImPSU51ozSQSyK20plRSAs',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'familypulse-8de4f.firebaseapp.com',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'familypulse-8de4f',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'familypulse-8de4f.firebasestorage.app',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '892197219421',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '1:892197219421:web:650ead5832aa5264a7b1b4',
 };
 
 export const firebaseReady = Boolean(
@@ -21,15 +21,13 @@ export const firebaseReady = Boolean(
 
 export const app: FirebaseApp | null = firebaseReady ? initializeApp(firebaseConfig) : null;
 
-// These placeholders are never used while firebaseReady === false.
-// Keeping stable exports lets the UI render a setup screen instead of crashing at startup.
 export const auth = (app ? getAuth(app) : null) as Auth;
 export const db = (app ? getFirestore(app) : null) as Firestore;
 export const storage = (app ? getStorage(app) : null) as FirebaseStorage;
 
 export async function ensureAuth() {
   if (!firebaseReady || !auth) {
-    throw new Error('Firebase is not configured. Add the VITE_FIREBASE_* environment variables.');
+    throw new Error('Firebase is not configured.');
   }
   if (auth.currentUser) return auth.currentUser;
   const credential = await signInAnonymously(auth);
