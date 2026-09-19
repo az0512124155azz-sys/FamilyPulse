@@ -1,59 +1,134 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
+    function signedIn() {
+      return request.auth != null;
+    }
+
     function isFamilyMember(familyId) {
-      return signedIn() && exists(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid));
+      return signedIn()
+        && exists(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid));
+    }
+
+    function isParent(familyId) {
+      return isFamilyMember(familyId)
+        && get(/databases/$(database)/documents/families/$(familyId)/members/$(request.auth.uid)).data.role == 'parent';
     }
 
     match /users/{uid} {
-      allow read, create, update: if signedIn() && request.auth.uid == uid;
+      allow read, create, update:
+        if signedIn() && request.auth.uid == uid;
     }
 
     match /pairCodes/{code} {
       allow get: if signedIn();
       allow list: if false;
-      allow create, update: if signedIn() && request.resource.data.uid == request.auth.uid;
+
+      allow create, update:
+        if signedIn()
+        && request.resource.data.uid == request.auth.uid;
+    }
+
+    match /childLinks/{uid} {
+      allow read:
+        if signedIn() && request.auth.uid == uid;
+
+      allow create, update:
+        if signedIn()
+        && request.resource.data.uid == uid
+        && isParent(request.resource.data.familyId);
     }
 
     match /families/{familyId} {
-      allow create: if signedIn() && request.resource.data.ownerUid == request.auth.uid;
-      allow read: if isFamilyMember(familyId);
+      allow create:
+        if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid;
+
+      allow read:
+        if isFamilyMember(familyId);
 
       match /members/{uid} {
-        allow read: if isFamilyMember(familyId);
-        allow create: if signedIn() && (
-          request.auth.uid == uid ||
-          (
-            isFamilyMember(familyId) &&
-            request.resource.data.role == 'child' &&
-            get(/databases/$(database)/documents/pairCodes/$(request.resource.data.inviteCode)).data.uid == uid &&
-            get(/databases/$(database)/documents/pairCodes/$(request.resource.data.inviteCode)).data.type == 'child'
-          ) ||
-          (
-            request.auth.uid == uid &&
-            request.resource.data.role == 'parent' &&
-            get(/databases/$(database)/documents/pairCodes/$(request.resource.data.inviteCode)).data.familyId == familyId &&
-            get(/databases/$(database)/documents/pairCodes/$(request.resource.data.inviteCode)).data.type == 'parent'
-          )
-        );
+        allow read:
+          if isFamilyMember(familyId);
+
+        allow create:
+          if signedIn() && (
+            request.auth.uid == uid
+            ||
+            (
+              isParent(familyId)
+              && request.resource.data.role == 'child'
+              && get(
+                /databases/$(database)/documents/pairCodes/$(request.resource.data.inviteCode)
+              ).data.uid == uid
+              && get(
+                /databases/$(database)/documents/pairCodes/$(request.resource.data.inviteCode)
+              ).data.type == 'child'
+            )
+            ||
+            (
+              request.auth.uid == uid
+              && request.resource.data.role == 'parent'
+              && get(
+                /databases/$(database)/documents/pairCodes/$(request.resource.data.inviteCode)
+              ).data.familyId == familyId
+              && get(
+                /databases/$(database)/documents/pairCodes/$(request.resource.data.inviteCode)
+              ).data.type == 'parent'
+            )
+          );
+
+        allow update:
+          if signedIn() && (
+            request.auth.uid == uid
+            ||
+            (
+              isParent(familyId)
+              && resource.data.role == 'child'
+              && request.resource.data.uid == uid
+            )
+          );
+      }
+
+      match /logoutEvents/{childUid} {
+        allow read:
+          if isFamilyMember(familyId);
+
+        allow create, update:
+          if signedIn()
+          && request.auth.uid == childUid
+          && request.resource.data.childUid == childUid
+          && request.resource.data.familyId == familyId;
       }
     }
 
     match /locationRequests/{childUid} {
-      allow read: if signedIn() && request.auth.uid == childUid;
-      allow create: if signedIn()
-        && isFamilyMember(request.resource.data.familyId)
-        && exists(/databases/$(database)/documents/families/$(request.resource.data.familyId)/members/$(childUid));
-      allow update: if signedIn() && (
-        request.auth.uid == childUid ||
-        isFamilyMember(request.resource.data.familyId)
-      );
+      allow read:
+        if signedIn() && request.auth.uid == childUid;
+
+      allow create:
+        if signedIn()
+        && isParent(request.resource.data.familyId)
+        && exists(
+          /databases/$(database)/documents/families/$(request.resource.data.familyId)/members/$(childUid)
+        );
+
+      allow update:
+        if signedIn() && (
+          request.auth.uid == childUid
+          ||
+          isParent(request.resource.data.familyId)
+        );
     }
 
     match /locations/{childUid} {
-      allow write: if signedIn() && request.auth.uid == childUid;
-      allow read: if signedIn() && isFamilyMember(resource.data.familyId);
+      allow write:
+        if signedIn() && request.auth.uid == childUid;
+
+      allow read:
+        if signedIn()
+        && isFamilyMember(resource.data.familyId);
     }
   }
 }
