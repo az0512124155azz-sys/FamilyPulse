@@ -65,6 +65,30 @@ export default function App(){
   },[profile?.familyId]);
 
   useEffect(()=>{
+    if(!profile?.familyId) return;
+    return onSnapshot(doc(db,'families',profile.familyId),snap=>{
+      const data=snap.data() as {home?:HomeConfig}|undefined;
+      if(data?.home){
+        setHome(data.home);
+        setHomeRadius(data.home.radiusMeters||150);
+      }else{
+        setHome(null);
+      }
+    });
+  },[profile?.familyId]);
+
+  useEffect(()=>{
+    if(profile?.role!=='parent' || !profile.familyId) return;
+    return onSnapshot(collection(db,'families',profile.familyId,'alerts'),snap=>{
+      const items=snap.docs
+        .map(d=>({id:d.id,...d.data()} as FamilyAlert))
+        .sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0))
+        .slice(0,10);
+      setAlerts(items);
+    });
+  },[profile?.role,profile?.familyId]);
+
+  useEffect(()=>{
     if(profile?.role!=='parent' || !profile.familyId) return;
     return onSnapshot(collection(db,'families',profile.familyId,'logoutEvents'),snap=>{
       const events=snap.docs
