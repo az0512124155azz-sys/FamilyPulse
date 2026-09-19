@@ -69,13 +69,13 @@
 .childImageMarker.selected{
   box-shadow:0 0 0 3px #0284c7,0 5px 12px #0f172a38!important;
 }
-.homePanel,.alertsPanel{background:#fff;border:1px solid #e2e8f0;border-radius:22px;padding:20px;box-shadow:0 10px 35px #0f172a08;margin-bottom:22px}
-.homePanelHeader{display:flex;align-items:center;justify-content:space-between;gap:16px}
-.homePanelHeader h2{display:flex;align-items:center;gap:8px;margin:0 0 4px}
-.homePanelHeader h2 svg{width:20px;color:#0284c7}
-.homePanelHeader p{margin:0;color:#64748b;font-size:13px}
-.radiusControl{display:grid;gap:8px;margin-top:18px;color:#475569;font-size:13px;font-weight:700}
-.radiusControl input{width:100%}
+
+
+
+
+
+
+
 .childActions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .homeBadge{font-size:11px;font-weight:800;border-radius:999px;padding:6px 9px}
 .homeBadge.inside{background:#ecfdf5;color:#047857}
@@ -86,8 +86,36 @@
 .familyAlert .grow{display:flex;flex-direction:column}
 .familyAlert .grow span{font-size:12px;color:#64748b;margin-top:2px}
 @media(max-width:720px){
-  .homePanelHeader{align-items:flex-start;flex-direction:column}
+  
   .homePanelHeader .primary,.homePanelHeader .secondary{width:100%;justify-content:center}
   .childActions{width:100%}
   .childActions .locate,.childActions .buzzButton{flex:1;justify-content:center}
+}
+
+.settingsButton{border:1px solid #dbe3ed;background:#fff;color:#334155;border-radius:10px;padding:7px 10px;font-weight:800;font-size:12px;display:flex;align-items:center;gap:6px}
+.settingsButton svg{width:15px;height:15px}
+.settingsOverlay{position:fixed;inset:0;background:#0f172a55;backdrop-filter:blur(4px);z-index:1000;display:grid;place-items:center;padding:20px}
+.settingsModal{width:min(760px,100%);max-height:90vh;overflow:auto;background:#fff;border-radius:24px;box-shadow:0 30px 90px #0f172a35;padding:22px}
+.settingsHeader{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}
+.settingsHeader h2{margin:3px 0 0}
+.iconButton{width:40px;height:40px;border:1px solid #e2e8f0;background:#fff;border-radius:12px;display:grid;place-items:center}
+.iconButton svg{width:18px}
+.settingsSection{border:1px solid #e2e8f0;border-radius:18px;padding:16px;background:#f8fafc}
+.settingsSectionTitle{display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}
+.settingsSectionTitle>svg{width:22px;color:#0284c7;flex:none}
+.settingsSectionTitle h3{margin:0 0 3px}
+.settingsSectionTitle p{margin:0;color:#64748b;font-size:13px}
+.fixedRadius{display:inline-block;background:#e0f2fe;color:#0369a1;border-radius:999px;padding:7px 10px;font-size:12px;margin-bottom:12px}
+.settingsMap{height:360px;border-radius:16px;overflow:hidden}
+.settingsHint{margin:10px 0 0;color:#64748b;font-size:12px}
+.homeMarkerHost{background:transparent!important;border:0!important}
+.homeMarker{display:flex;align-items:center;gap:5px;background:#fff;border:2px solid #0284c7;border-radius:999px;padding:5px 9px;box-shadow:0 5px 14px #0f172a25;color:#0f172a;white-space:nowrap}
+.homeMarker span{color:#0284c7;font-size:16px}
+.homeMarker b{font-size:12px}
+.alertsPanel{background:#fff;border:1px solid #e2e8f0;border-radius:22px;padding:20px;box-shadow:0 10px 35px #0f172a08;margin-bottom:22px}
+@media(max-width:720px){
+  .settingsButton{padding:7px;font-size:0}
+  .settingsButton svg{width:17px;height:17px}
+  .settingsModal{padding:16px}
+  .settingsMap{height:300px}
 }
