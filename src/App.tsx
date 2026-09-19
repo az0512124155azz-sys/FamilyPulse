@@ -236,8 +236,20 @@ export default function App(){
     if(data.type==='child'){
       if(profile.role!=='parent' || !profile.familyId){setMessage('רק הורה יכול לצרף ילד.');return;}
       await setDoc(doc(db,'families',profile.familyId,'members',data.uid),{
-        uid:data.uid,name:data.name,photoURL:data.photoURL||'',role:'child',inviteCode:code
-      });
+        uid:data.uid,
+        name:data.name,
+        photoURL:data.photoURL||'',
+        role:'child',
+        inviteCode:code,
+        active:true,
+        connectedAt:serverTimestamp()
+      },{merge:true});
+      await setDoc(doc(db,'childLinks',data.uid),{
+        uid:data.uid,
+        familyId:profile.familyId,
+        linkedBy:profile.uid,
+        linkedAt:serverTimestamp()
+      },{merge:true});
       setMessage(`${data.name} נוסף למשפחה.`);
     }else{
       if(profile.role!=='parent' || !data.familyId){setMessage('הקוד הזה אינו קוד שיתוף פעיל.');return;}
@@ -251,7 +263,65 @@ export default function App(){
     setJoinCode('');
   }
 
+  async function getLogoutLocation(){
+    const getPosition=(options:PositionOptions)=>new Promise<GeolocationPosition>((resolve,reject)=>
+      navigator.geolocation.getCurrentPosition(resolve,reject,options)
+    );
+    try{
+      return await getPosition({enableHighAccuracy:true,timeout:6000,maximumAge:30000});
+    }catch{
+      try{
+        return await getPosition({enableHighAccuracy:false,timeout:1500,maximumAge:300000});
+      }catch{
+        return null;
+      }
+    }
+  }
+
   async function logout(){
+    if(profile?.role==='child'){
+      setMessage('שומר מיקום אחרון לפני ההתנתקות…');
+      try{
+        const link=await getDoc(doc(db,'childLinks',profile.uid));
+        let familyId=link.exists() ? String(link.data().familyId||'') : '';
+
+        if(!familyId){
+          const lastRequest=await getDoc(doc(db,'locationRequests',profile.uid));
+          if(lastRequest.exists()) familyId=String(lastRequest.data().familyId||'');
+        }
+
+        if(familyId){
+          const pos=await getLogoutLocation();
+          const eventData:Record<string,unknown>={
+            childUid:profile.uid,
+            name:profile.name,
+            photoURL:profile.photoURL||'',
+            familyId,
+            hasLocation:Boolean(pos),
+            loggedOutAt:serverTimestamp()
+          };
+
+          if(pos){
+            eventData.lat=pos.coords.latitude;
+            eventData.lng=pos.coords.longitude;
+            eventData.accuracy=pos.coords.accuracy;
+          }
+
+          await setDoc(
+            doc(db,'families',familyId,'logoutEvents',`${profile.uid}-${Date.now()}`),
+            eventData
+          );
+
+          await updateDoc(doc(db,'families',familyId,'members',profile.uid),{
+            active:false,
+            disconnectedAt:serverTimestamp()
+          });
+        }
+      }catch(err){
+        console.error('Could not save child logout event',err);
+      }
+    }
+
     try{
       await signOut(auth);
     }finally{
