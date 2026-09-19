@@ -47,6 +47,7 @@ export default function App(){
   const [homeDraft,setHomeDraft]=useState<{lat:number;lng:number;label?:string}|null>(null);
   const [soundReady,setSoundReady]=useState(false);
   const audioContextRef=useRef<AudioContext|null>(null);
+  const audioKeepAliveRef=useRef<{osc:OscillatorNode;gain:GainNode}|null>(null);
   const requestStartedAt=useRef<Record<string,number>>({});
   const autoRequestedFamily=useRef<string>('');
   const children=useMemo(()=>members.filter(m=>m.role==='child' && m.active!==false),[members]);
@@ -92,7 +93,16 @@ export default function App(){
             .map(async child=>{
               if(child.active===false){
                 setMembers(prev=>prev.filter(member=>member.uid!==child.uid));
-                await deleteDoc(doc(db,'families',profile.familyId!,'members',child.uid)).catch(()=>{});
+                await Promise.allSettled([
+                  deleteDoc(doc(db,'families',profile.familyId!,'members',child.uid)),
+                  deleteDoc(doc(db,'childLinks',child.uid)),
+                  deleteDoc(doc(db,'presence',child.uid)),
+                  deleteDoc(doc(db,'locations',child.uid)),
+                  deleteDoc(doc(db,'locationRequests',child.uid)),
+                  deleteDoc(doc(db,'buzzerCommands',child.uid)),
+                  deleteDoc(doc(db,'users',child.uid)),
+                  ...(child.inviteCode?[deleteDoc(doc(db,'pairCodes',child.inviteCode))]:[])
+                ]);
                 setLocations(prev=>{
                   const copy={...prev};
                   delete copy[child.uid];
@@ -111,7 +121,16 @@ export default function App(){
                 const pair=await getDoc(doc(db,'pairCodes',child.inviteCode));
                 if(!pair.exists() || pair.data()?.revoked===true){
                   setMembers(prev=>prev.filter(member=>member.uid!==child.uid));
-                  await deleteDoc(doc(db,'families',profile.familyId!,'members',child.uid)).catch(()=>{});
+                  await Promise.allSettled([
+                    deleteDoc(doc(db,'families',profile.familyId!,'members',child.uid)),
+                    deleteDoc(doc(db,'childLinks',child.uid)),
+                    deleteDoc(doc(db,'presence',child.uid)),
+                    deleteDoc(doc(db,'locations',child.uid)),
+                    deleteDoc(doc(db,'locationRequests',child.uid)),
+                    deleteDoc(doc(db,'buzzerCommands',child.uid)),
+                    deleteDoc(doc(db,'users',child.uid)),
+                    ...(child.inviteCode?[deleteDoc(doc(db,'pairCodes',child.inviteCode))]:[])
+                  ]);
                   setLocations(prev=>{
                     const copy={...prev};
                     delete copy[child.uid];
@@ -208,12 +227,16 @@ export default function App(){
 
         if(familyId){
           localStorage.setItem('familypulse.familyId',familyId);
-          await setDoc(doc(db,'presence',profile.uid),{
-            uid:profile.uid,
-            familyId,
-            online:true,
-            lastSeen:serverTimestamp()
-          },{merge:true});
+          await Promise.allSettled([
+            setDoc(doc(db,'presence',profile.uid),{
+              uid:profile.uid,
+              familyId,
+              online:true,
+              lastSeen:serverTimestamp()
+            },{merge:true}),
+            setDoc(doc(db,'users',profile.uid),{familyId},{merge:true}),
+            setDoc(doc(db,'pairCodes',profile.code),{familyId},{merge:true})
+          ]);
         }
       }catch(err){
         console.warn('Presence update failed',err);
@@ -244,11 +267,13 @@ export default function App(){
       if(data.buzzStatus==='requested' && data.buzzToken){
         try{
           const ctx=audioContextRef.current;
-          if(!ctx || ctx.state!=='running'){
-            throw new Error('audio-not-enabled');
+          if(!ctx) throw new Error('audio-not-enabled');
+          if(ctx.state==='suspended'){
+            await ctx.resume().catch(()=>{});
           }
+          if(ctx.state!=='running') throw new Error('audio-not-enabled');
 
-          setMessage('התקבל צפצוף מההורה.');
+          setMessage('התקבל צפצוף מההורה — האזעקה תפעל עד דקה.');
           const vibrate=(navigator as Navigator & {vibrate?:(pattern:number|number[])=>boolean}).vibrate;
           vibrate?.call(navigator,[350,120,350,120,350,120,900,150,900]);
 
@@ -257,7 +282,7 @@ export default function App(){
             buzzStartedAt:serverTimestamp()
           });
 
-          await playAlarmTone(ctx,20);
+          await playAlarmTone(ctx,60);
 
           await updateDoc(reqRef,{
             buzzStatus:'completed',
@@ -330,6 +355,24 @@ export default function App(){
   },[profile]);
 
 
+
+  useEffect(()=>{
+    if(profile?.role!=='child') return;
+
+    const resumeAudio=()=>{
+      const ctx=audioContextRef.current;
+      if(ctx && ctx.state==='suspended'){
+        void ctx.resume().then(()=>setSoundReady(ctx.state==='running')).catch(()=>{});
+      }
+    };
+
+    document.addEventListener('visibilitychange',resumeAudio);
+    window.addEventListener('focus',resumeAudio);
+    return ()=>{
+      document.removeEventListener('visibilitychange',resumeAudio);
+      window.removeEventListener('focus',resumeAudio);
+    };
+  },[profile?.role]);
 
   useEffect(()=>{
     if(profile?.role!=='parent' || children.length===0) return;
@@ -495,17 +538,35 @@ export default function App(){
       const AudioCtx=window.AudioContext || (window as typeof window & {webkitAudioContext?:typeof AudioContext}).webkitAudioContext;
       if(!AudioCtx) throw new Error('AudioContext unsupported');
 
-      const ctx=audioContextRef.current||new AudioCtx();
-      audioContextRef.current=ctx;
+      let ctx=audioContextRef.current;
+      if(!ctx || ctx.state==='closed'){
+        ctx=new AudioCtx({latencyHint:'interactive'});
+        audioContextRef.current=ctx;
+      }
+
       if(ctx.state==='suspended') await ctx.resume();
 
-      await playAlarmTone(ctx,1.8);
+      // Keep the already-unlocked audio session alive while this page stays open.
+      if(!audioKeepAliveRef.current){
+        const keepGain=ctx.createGain();
+        keepGain.gain.setValueAtTime(0.000001,ctx.currentTime);
+        const keepOsc=ctx.createOscillator();
+        keepOsc.type='sine';
+        keepOsc.frequency.setValueAtTime(22,ctx.currentTime);
+        keepOsc.connect(keepGain);
+        keepGain.connect(ctx.destination);
+        keepOsc.start();
+        audioKeepAliveRef.current={osc:keepOsc,gain:keepGain};
+      }
+
       setSoundReady(true);
-      setMessage('צלילי ההתראה הופעלו במכשיר הזה.');
+      setMessage('צלילי ההתראה הופעלו. משמיע עכשיו בדיקת אזעקה של 8 שניות…');
+      await playAlarmTone(ctx,8);
+      setMessage('צלילי ההתראה פעילים. השאר את FamilyPulse פתוח כדי לקבל צפצוף מההורה.');
     }catch(err){
       console.error('Could not enable alert sound',err);
       setSoundReady(false);
-      setMessage('לא הצלחנו להפעיל את הצליל. בדוק שעוצמת המדיה אינה על אפס ונסה שוב.');
+      setMessage('לא הצלחנו להפעיל את הצליל. ודא שעוצמת המדיה גבוהה ונסה שוב.');
     }
   }
 
@@ -521,6 +582,40 @@ export default function App(){
       }catch{
         return null;
       }
+    }
+  }
+
+  async function deleteCurrentAuthAccount(){
+    const current=auth.currentUser;
+    if(!current) return true;
+
+    try{
+      await deleteUser(current);
+      return true;
+    }catch(sdkError){
+      console.warn('Firebase SDK deleteUser failed; trying Identity Toolkit REST fallback',sdkError);
+    }
+
+    try{
+      const idToken=await current.getIdToken(true);
+      const apiKey=String(auth.app.options.apiKey||'');
+      if(!apiKey) throw new Error('missing-api-key');
+
+      const response=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:delete?key=${encodeURIComponent(apiKey)}`,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({idToken})
+      });
+
+      if(!response.ok){
+        throw new Error(`Identity Toolkit delete failed: ${response.status}`);
+      }
+
+      await signOut(auth).catch(()=>{});
+      return true;
+    }catch(restError){
+      console.error('Firebase Auth REST delete failed',restError);
+      return false;
     }
   }
 
@@ -634,16 +729,14 @@ export default function App(){
       setLocations({});
       setPresence({});
 
-      try{
-        if(auth.currentUser){
-          await deleteUser(auth.currentUser);
-        }
-      }catch(err){
-        console.warn('Firebase Auth delete failed; signing out instead',err);
-        try{ await signOut(auth); }catch{}
+      const authDeleted=await deleteCurrentAuthAccount();
+      if(!authDeleted){
+        // The UI is already disconnected, but make the failure explicit instead of silently hiding it.
+        setMessage('המשתמש הוסר מהמשפחה, אבל מחיקת Firebase Authentication נכשלה. יש לפרסם את חוקי Firebase המעודכנים ולנסות שוב.');
+        await signOut(auth).catch(()=>{});
+      }else{
+        setMessage('');
       }
-
-      setMessage('');
       return;
     }
 
@@ -670,7 +763,7 @@ export default function App(){
     }
 
     const question=testNow
-      ? `לשלוח עכשיו צפצוף בדיקה של 20 שניות לטלפון של ${child.name}?`
+      ? `לשלוח עכשיו צפצוף בדיקה של עד דקה לטלפון של ${child.name}?`
       : `אתה בטוח שאתה רוצה לצפצף לטלפון של ${child.name}?`;
     if(!window.confirm(question)) return;
 
@@ -888,7 +981,7 @@ export default function App(){
                   void sendBuzz(child,testMode);
                 }}
               >
-                🔔 {canBuzzNow()&&child.homeStatus==='inside'?'צפצף':'בדיקת צפצוף 20 שנ׳'}
+                🔔 {canBuzzNow()&&child.homeStatus==='inside'?'צפצף':'בדיקת צפצוף'}
               </button>
               <button className="locate" onClick={e=>{e.stopPropagation();requestLocation(child)}}><LocateFixed/> רענן</button>
             </div>
@@ -1083,52 +1176,85 @@ function distanceMeters(lat1:number,lng1:number,lat2:number,lng2:number){
   return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-async function playAlarmTone(ctx:AudioContext,duration=20){
+async function playAlarmTone(ctx:AudioContext,duration=60){
   if(ctx.state==='suspended') await ctx.resume();
 
   const start=ctx.currentTime;
   const end=start+duration;
 
   const compressor=ctx.createDynamicsCompressor();
-  compressor.threshold.setValueAtTime(-18,start);
-  compressor.knee.setValueAtTime(12,start);
-  compressor.ratio.setValueAtTime(8,start);
-  compressor.attack.setValueAtTime(0.003,start);
-  compressor.release.setValueAtTime(0.12,start);
+  compressor.threshold.setValueAtTime(-8,start);
+  compressor.knee.setValueAtTime(6,start);
+  compressor.ratio.setValueAtTime(4,start);
+  compressor.attack.setValueAtTime(0.001,start);
+  compressor.release.setValueAtTime(0.08,start);
   compressor.connect(ctx.destination);
 
   const master=ctx.createGain();
   master.gain.setValueAtTime(0.0001,start);
   master.connect(compressor);
 
-  // Repeating on/off alarm pattern. The level cannot exceed the device's own media volume.
-  for(let t=0;t<duration;t+=0.5){
-    const at=start+t;
-    master.gain.setValueAtTime(0.0001,at);
-    master.gain.exponentialRampToValueAtTime(1.0,Math.min(at+0.025,end));
-    master.gain.setValueAtTime(1.0,Math.min(at+0.34,end));
-    master.gain.exponentialRampToValueAtTime(0.0001,Math.min(at+0.46,end));
+  // Loud repeating wake-up pattern: rapid triple beeps followed by a longer siren pulse.
+  for(let t=0;t<duration;t+=1.6){
+    const sequence=[
+      [0.00,0.28],
+      [0.38,0.66],
+      [0.76,1.04],
+      [1.14,1.52]
+    ];
+    for(const [on,off] of sequence){
+      const onAt=Math.min(start+t+on,end);
+      const offAt=Math.min(start+t+off,end);
+      master.gain.setValueAtTime(0.0001,onAt);
+      master.gain.exponentialRampToValueAtTime(1.0,Math.min(onAt+0.018,end));
+      master.gain.setValueAtTime(1.0,Math.max(onAt,offAt-0.035));
+      master.gain.exponentialRampToValueAtTime(0.0001,offAt);
+    }
   }
 
-  const frequencies=[740,980,1320];
-  const oscillators=frequencies.map((frequency,index)=>{
-    const osc=ctx.createOscillator();
-    const gain=ctx.createGain();
-    osc.type=index===2?'sawtooth':'square';
-    osc.frequency.setValueAtTime(frequency,start);
-    gain.gain.setValueAtTime(index===0?0.42:0.28,start);
-    osc.connect(gain);
-    gain.connect(master);
-    osc.start(start);
-    osc.stop(end);
-    return osc;
-  });
+  const oscA=ctx.createOscillator();
+  const oscB=ctx.createOscillator();
+  const oscC=ctx.createOscillator();
+  const gainA=ctx.createGain();
+  const gainB=ctx.createGain();
+  const gainC=ctx.createGain();
+
+  oscA.type='square';
+  oscB.type='sawtooth';
+  oscC.type='square';
+  gainA.gain.setValueAtTime(0.42,start);
+  gainB.gain.setValueAtTime(0.30,start);
+  gainC.gain.setValueAtTime(0.24,start);
+
+  oscA.connect(gainA); gainA.connect(master);
+  oscB.connect(gainB); gainB.connect(master);
+  oscC.connect(gainC); gainC.connect(master);
+
+  for(let t=0;t<duration;t+=0.8){
+    const a=start+t;
+    const b=Math.min(a+0.4,end);
+    const c=Math.min(a+0.8,end);
+
+    oscA.frequency.setValueAtTime(920,a);
+    oscA.frequency.linearRampToValueAtTime(1560,b);
+    oscA.frequency.linearRampToValueAtTime(920,c);
+
+    oscB.frequency.setValueAtTime(690,a);
+    oscB.frequency.linearRampToValueAtTime(1180,b);
+    oscB.frequency.linearRampToValueAtTime(690,c);
+
+    oscC.frequency.setValueAtTime(1840,a);
+    oscC.frequency.linearRampToValueAtTime(1260,b);
+    oscC.frequency.linearRampToValueAtTime(1840,c);
+  }
+
+  oscA.start(start); oscB.start(start); oscC.start(start);
+  oscA.stop(end); oscB.stop(end); oscC.stop(end);
 
   const vibrate=(navigator as Navigator & {vibrate?:(pattern:number|number[])=>boolean}).vibrate;
-  vibrate?.call(navigator,[500,120,500,120,500,120,1000,180,1000,180,1000]);
+  vibrate?.call(navigator,[700,120,700,120,700,180,1400,180,1400,180,1400]);
 
-  await new Promise(resolve=>setTimeout(resolve,duration*1000+200));
-  void oscillators;
+  await new Promise(resolve=>setTimeout(resolve,duration*1000+250));
 }
 
 function SettingsMapFocus({home}:{home:HomeConfig|null}){
