@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { signOut } from 'firebase/auth';
+import { deleteUser, signOut } from 'firebase/auth';
 import {
-  collection, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc
+  collection, deleteDoc, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc
 } from 'firebase/firestore';
-import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
+import { Circle, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import { Baby, Copy, LocateFixed, MapPin, Plus, ShieldCheck, Smartphone, Users, Maximize2 } from 'lucide-react';
 import { auth, db, ensureAuth, firebaseReady } from './firebase';
 import { divIcon, icon, latLngBounds } from 'leaflet';
@@ -15,6 +15,8 @@ type Member={uid:string;name:string;photoURL?:string;role:Role;inviteCode?:strin
 type Location={lat:number;lng:number;accuracy:number;familyId:string;updatedAt?:{seconds:number};source?:'fast'|'precise'};
 type LogoutEvent={childUid:string;name:string;photoURL?:string;familyId:string;loggedOutAt?:{seconds:number};lat?:number;lng?:number;accuracy?:number;hasLocation:boolean};
 type Presence={online:boolean;lastSeen?:{seconds:number};familyId?:string};
+type HomeConfig={lat:number;lng:number;radiusMeters:number;updatedAt?:{seconds:number}};
+type FamilyAlert={id:string;type:'exit_home'|'logout';childUid:string;childName:string;createdAt?:{seconds:number};lat?:number;lng?:number};
 
 const randomCode=()=>Math.random().toString(36).slice(2,6).toUpperCase()+Math.random().toString(36).slice(2,6).toUpperCase();
 const randomId=()=>crypto.randomUUID().replaceAll('-','').slice(0,20);
@@ -34,6 +36,10 @@ export default function App(){
   const [message,setMessage]=useState('');
   const [logoutEvents,setLogoutEvents]=useState<LogoutEvent[]>([]);
   const [presence,setPresence]=useState<Record<string,Presence>>({});
+  const [home,setHome]=useState<HomeConfig|null>(null);
+  const [homeRadius,setHomeRadius]=useState(150);
+  const [settingHome,setSettingHome]=useState(false);
+  const [alerts,setAlerts]=useState<FamilyAlert[]>([]);
   const requestStartedAt=useRef<Record<string,number>>({});
   const autoRequestedFamily=useRef<string>('');
   const children=useMemo(()=>members.filter(m=>m.role==='child' && m.active!==false),[members]);
