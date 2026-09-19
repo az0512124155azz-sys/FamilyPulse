@@ -57,6 +57,30 @@ export default function App(){
   },[profile?.familyId]);
 
   useEffect(()=>{
+    if(profile?.role!=='parent' || !profile.familyId) return;
+    return onSnapshot(collection(db,'families',profile.familyId,'logoutEvents'),snap=>{
+      const events=snap.docs
+        .map(d=>d.data() as LogoutEvent)
+        .sort((a,b)=>(b.loggedOutAt?.seconds||0)-(a.loggedOutAt?.seconds||0))
+        .slice(0,5);
+      setLogoutEvents(events);
+    });
+  },[profile?.role,profile?.familyId]);
+
+  useEffect(()=>{
+    if(profile?.role!=='parent' || !profile.familyId || children.length===0) return;
+
+    Promise.allSettled(children.map(child=>
+      setDoc(doc(db,'childLinks',child.uid),{
+        uid:child.uid,
+        familyId:profile.familyId,
+        linkedBy:profile.uid,
+        linkedAt:serverTimestamp()
+      },{merge:true})
+    )).catch(()=>{});
+  },[profile?.role,profile?.familyId,children.map(c=>c.uid).join('|')]);
+
+  useEffect(()=>{
     if(!profile || profile.role!=='child') return;
     const reqRef=doc(db,'locationRequests',profile.uid);
 
