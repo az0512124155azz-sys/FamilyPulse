@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { deleteUser, signOut } from 'firebase/auth';
+import { deleteUser, onAuthStateChanged, signOut } from 'firebase/auth';
 import {
   collection, deleteDoc, doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc
 } from 'firebase/firestore';
@@ -52,13 +52,31 @@ export default function App(){
   const children=useMemo(()=>members.filter(m=>m.role==='child' && m.active!==false),[members]);
   const parents=useMemo(()=>members.filter(m=>m.role==='parent'),[members]);
 
-  useEffect(()=>{(async()=>{
+  useEffect(()=>{
     if(!firebaseReady){setLoading(false);return;}
-    const user=await ensureAuth();
-    const snap=await getDoc(doc(db,'users',user.uid));
-    if(snap.exists()) setProfile({uid:user.uid,...snap.data()} as Profile);
-    setLoading(false);
-  })().catch(e=>{console.error(e);setLoading(false);});},[]);
+
+    return onAuthStateChanged(auth,async user=>{
+      try{
+        if(!user){
+          setProfile(null);
+          setLoading(false);
+          return;
+        }
+
+        const snap=await getDoc(doc(db,'users',user.uid));
+        if(snap.exists() && snap.data()?.deleted!==true){
+          setProfile({uid:user.uid,...snap.data()} as Profile);
+        }else{
+          setProfile(null);
+        }
+      }catch(err){
+        console.error('Auth/profile bootstrap failed',err);
+        setProfile(null);
+      }finally{
+        setLoading(false);
+      }
+    });
+  },[]);
 
   useEffect(()=>{
     if(!profile?.familyId) return;
@@ -73,7 +91,8 @@ export default function App(){
             .filter(member=>member.role==='child')
             .map(async child=>{
               if(child.active===false){
-                await deleteDoc(doc(db,'families',profile.familyId!,'members',child.uid));
+                setMembers(prev=>prev.filter(member=>member.uid!==child.uid));
+                await deleteDoc(doc(db,'families',profile.familyId!,'members',child.uid)).catch(()=>{});
                 setLocations(prev=>{
                   const copy={...prev};
                   delete copy[child.uid];
@@ -91,7 +110,8 @@ export default function App(){
               if(child.inviteCode){
                 const pair=await getDoc(doc(db,'pairCodes',child.inviteCode));
                 if(!pair.exists() || pair.data()?.revoked===true){
-                  await deleteDoc(doc(db,'families',profile.familyId!,'members',child.uid));
+                  setMembers(prev=>prev.filter(member=>member.uid!==child.uid));
+                  await deleteDoc(doc(db,'families',profile.familyId!,'members',child.uid)).catch(()=>{});
                   setLocations(prev=>{
                     const copy={...prev};
                     delete copy[child.uid];
@@ -117,15 +137,24 @@ export default function App(){
 
   useEffect(()=>{
     if(!profile?.familyId) return;
-    return onSnapshot(doc(db,'families',profile.familyId),snap=>{
+
+    return onSnapshot(doc(db,'families',profile.familyId),async snap=>{
       const data=snap.data() as {home?:HomeConfig}|undefined;
       if(data?.home){
         setHome({...data.home,radiusMeters:30});
-      }else{
+        return;
+      }
+
+      try{
+        const own=await getDoc(doc(db,'users',profile.uid));
+        const ownHome=own.data()?.home as HomeConfig|undefined;
+        setHome(ownHome?{...ownHome,radiusMeters:30}:null);
+      }catch(err){
+        console.warn('Could not load fallback home config',err);
         setHome(null);
       }
     });
-  },[profile?.familyId]);
+  },[profile?.familyId,profile?.uid]);
 
   useEffect(()=>{
     if(profile?.role!=='parent' || !profile.familyId) return;
@@ -210,7 +239,43 @@ export default function App(){
 
     return onSnapshot(reqRef,async snap=>{
       const data=snap.data();
-      if(!data || data.status!=='requested' || !data.familyId) return;
+      if(!data || !data.familyId) return;
+
+      if(data.buzzStatus==='requested' && data.buzzToken){
+        try{
+          const ctx=audioContextRef.current;
+          if(!ctx || ctx.state!=='running'){
+            throw new Error('audio-not-enabled');
+          }
+
+          setMessage('התקבל צפצוף מההורה.');
+          const vibrate=(navigator as Navigator & {vibrate?:(pattern:number|number[])=>boolean}).vibrate;
+          vibrate?.call(navigator,[350,120,350,120,350,120,900,150,900]);
+
+          await updateDoc(reqRef,{
+            buzzStatus:'playing',
+            buzzStartedAt:serverTimestamp()
+          });
+
+          await playAlarmTone(ctx,20);
+
+          await updateDoc(reqRef,{
+            buzzStatus:'completed',
+            buzzCompletedAt:serverTimestamp()
+          });
+
+          setMessage('הצפצוף הסתיים.');
+        }catch(err){
+          console.error('Alarm playback failed',err);
+          await updateDoc(reqRef,{
+            buzzStatus:'failed',
+            buzzCompletedAt:serverTimestamp()
+          }).catch(()=>{});
+          setMessage('התקבלה התראה, אבל הצליל חסום. לחץ על “הפעל צלילי התראה”.');
+        }
+      }
+
+      if(data.status!=='requested') return;
 
       const getPosition=(options:PositionOptions)=>new Promise<GeolocationPosition>((resolve,reject)=>
         navigator.geolocation.getCurrentPosition(resolve,reject,options)
@@ -264,35 +329,7 @@ export default function App(){
     });
   },[profile]);
 
-  useEffect(()=>{
-    if(!profile || profile.role!=='child') return;
 
-    return onSnapshot(doc(db,'buzzerCommands',profile.uid),async snap=>{
-      const data=snap.data() as {status?:string}|undefined;
-      if(!data || data.status!=='requested') return;
-
-      try{
-        const ctx=audioContextRef.current;
-        if(!ctx || ctx.state!=='running'){
-          throw new Error('audio-not-enabled');
-        }
-
-        await playAlarmTone(ctx);
-        await updateDoc(doc(db,'buzzerCommands',profile.uid),{
-          status:'completed',
-          completedAt:serverTimestamp()
-        });
-        setMessage('התקבלה התראת השכמה מההורה.');
-      }catch(err){
-        console.error('Alarm playback failed',err);
-        await updateDoc(doc(db,'buzzerCommands',profile.uid),{
-          status:'failed',
-          completedAt:serverTimestamp()
-        });
-        setMessage('התקבלה התראה, אבל הצליל לא הופעל. לחץ על “הפעל צלילי התראה” במכשיר הילד.');
-      }
-    });
-  },[profile?.uid,profile?.role]);
 
   useEffect(()=>{
     if(profile?.role!=='parent' || children.length===0) return;
@@ -462,7 +499,7 @@ export default function App(){
       audioContextRef.current=ctx;
       if(ctx.state==='suspended') await ctx.resume();
 
-      await playAlarmTone(ctx,0.35);
+      await playAlarmTone(ctx,1.8);
       setSoundReady(true);
       setMessage('צלילי ההתראה הופעלו במכשיר הזה.');
     }catch(err){
@@ -510,8 +547,36 @@ export default function App(){
       const pos=familyId?await getLogoutLocation():null;
 
       if(familyId){
-        // These writes should never prevent the actual logout.
+        // Old production rules already permit the child to update its own member document.
+        // This is the critical write that removes the child from the parent's UI immediately.
+        try{
+          await updateDoc(doc(db,'families',familyId,'members',profile.uid),{
+            active:false,
+            disconnectedAt:serverTimestamp()
+          });
+        }catch(err){
+          console.error('Could not mark family member inactive',err);
+        }
+
+        // Revoke/tombstone records using writes that older rules allow.
         await Promise.allSettled([
+          setDoc(doc(db,'pairCodes',profile.code),{
+            uid:profile.uid,
+            type:'child',
+            name:profile.name,
+            photoURL:profile.photoURL||'',
+            revoked:true,
+            revokedAt:serverTimestamp()
+          },{merge:true}),
+          setDoc(doc(db,'users',profile.uid),{
+            uid:profile.uid,
+            name:profile.name,
+            photoURL:profile.photoURL||'',
+            role:'child',
+            code:profile.code,
+            deleted:true,
+            deletedAt:serverTimestamp()
+          },{merge:true}),
           setDoc(doc(db,'presence',profile.uid),{
             uid:profile.uid,
             familyId,
@@ -530,38 +595,10 @@ export default function App(){
               accuracy:pos.coords.accuracy
             }:{}),
             loggedOutAt:serverTimestamp()
-          }),
-          setDoc(doc(db,'families',familyId,'alerts',randomId()),{
-            type:'logout',
-            childUid:profile.uid,
-            childName:profile.name,
-            lat:pos?.coords.latitude??null,
-            lng:pos?.coords.longitude??null,
-            createdAt:serverTimestamp()
-          }),
-          // Works even with older rules that allowed child updates but not deletes.
-          updateDoc(doc(db,'families',familyId,'members',profile.uid),{
-            active:false,
-            disconnectedAt:serverTimestamp()
           })
         ]);
 
-        // Revoke the pairing code before cleanup so the parent can remove stale members.
-        await Promise.allSettled([
-          setDoc(doc(db,'pairCodes',profile.code),{
-            uid:profile.uid,
-            type:'child',
-            name:profile.name,
-            photoURL:profile.photoURL||'',
-            revoked:true,
-            revokedAt:serverTimestamp()
-          },{merge:true}),
-          setDoc(doc(db,'users',profile.uid),{
-            deleted:true,
-            deletedAt:serverTimestamp()
-          },{merge:true})
-        ]);
-
+        // Full cleanup succeeds once the repository rules are also published in Firebase.
         await Promise.allSettled([
           deleteDoc(doc(db,'families',familyId,'members',profile.uid)),
           deleteDoc(doc(db,'childLinks',profile.uid)),
@@ -572,9 +609,30 @@ export default function App(){
           deleteDoc(doc(db,'pairCodes',profile.code)),
           deleteDoc(doc(db,'users',profile.uid))
         ]);
+      }else{
+        // Even without a family link, revoke the child's own account/profile.
+        await Promise.allSettled([
+          setDoc(doc(db,'pairCodes',profile.code),{
+            uid:profile.uid,
+            type:'child',
+            revoked:true,
+            revokedAt:serverTimestamp()
+          },{merge:true}),
+          setDoc(doc(db,'users',profile.uid),{
+            uid:profile.uid,
+            role:'child',
+            code:profile.code,
+            deleted:true,
+            deletedAt:serverTimestamp()
+          },{merge:true})
+        ]);
       }
 
       localStorage.removeItem('familypulse.familyId');
+      setProfile(null);
+      setMembers([]);
+      setLocations({});
+      setPresence({});
 
       try{
         if(auth.currentUser){
@@ -585,14 +643,16 @@ export default function App(){
         try{ await signOut(auth); }catch{}
       }
 
-      window.location.reload();
+      setMessage('');
       return;
     }
 
     try{
       await signOut(auth);
-    }finally{
-      window.location.reload();
+      setProfile(null);
+    }catch(err){
+      console.error('Parent sign out failed',err);
+      setMessage('ההתנתקות נכשלה. נסה שוב.');
     }
   }
 
@@ -610,22 +670,26 @@ export default function App(){
     }
 
     const question=testNow
-      ? `לשלוח עכשיו צפצוף בדיקה לטלפון של ${child.name}?`
+      ? `לשלוח עכשיו צפצוף בדיקה של 20 שניות לטלפון של ${child.name}?`
       : `אתה בטוח שאתה רוצה לצפצף לטלפון של ${child.name}?`;
     if(!window.confirm(question)) return;
 
-    await setDoc(doc(db,'buzzerCommands',child.uid),{
-      childUid:child.uid,
-      familyId:profile.familyId,
-      requestedBy:profile.uid,
-      status:'requested',
-      testMode:testNow,
-      requestedAt:serverTimestamp()
-    });
+    try{
+      await setDoc(doc(db,'locationRequests',child.uid),{
+        childUid:child.uid,
+        familyId:profile.familyId,
+        requestedBy:profile.uid,
+        buzzToken:randomId(),
+        buzzStatus:'requested',
+        buzzTest:testNow,
+        buzzRequestedAt:serverTimestamp()
+      },{merge:true});
 
-    setMessage(testNow
-      ? `נשלח צפצוף בדיקה עכשיו ל־${child.name}.`
-      : `נשלחה בקשת צפצוף ל־${child.name}.`);
+      setMessage(`הצפצוף נשלח ל־${child.name}. FamilyPulse צריך להיות פתוח במכשיר הילד וצלילי ההתראה צריכים להיות פעילים.`);
+    }catch(err){
+      console.error('Buzz request failed',err);
+      setMessage('שליחת הצפצוף נכשלה. רענן את הדף ונסה שוב.');
+    }
   }
 
   async function searchHomeAddress(){
@@ -666,22 +730,28 @@ export default function App(){
   async function saveHome(){
     if(!profile?.familyId || !homeDraft) return;
 
+    const savedHome={
+      lat:homeDraft.lat,
+      lng:homeDraft.lng,
+      radiusMeters:30,
+      updatedAt:serverTimestamp()
+    };
+
     try{
-      await setDoc(doc(db,'families',profile.familyId),{
-        home:{
-          lat:homeDraft.lat,
-          lng:homeDraft.lng,
-          radiusMeters:30,
-          updatedAt:serverTimestamp()
-        }
-      },{merge:true});
+      // This path works with the original production rules because users can update their own profile.
+      await setDoc(doc(db,'users',profile.uid),{home:savedHome},{merge:true});
+
+      // Keep trying to share the home at family level too; failure here must not break the feature.
+      await setDoc(doc(db,'families',profile.familyId),{home:savedHome},{merge:true})
+        .catch(err=>console.warn('Family home sync blocked by current Firestore rules',err));
 
       setHome({lat:homeDraft.lat,lng:homeDraft.lng,radiusMeters:30});
+      setHomeSearchError('');
       setMessage('הבית נשמר בהצלחה.');
       setSettingsOpen(false);
     }catch(err){
       console.error('Saving home failed',err);
-      setHomeSearchError('שמירת הבית נכשלה. ודא ש־Firestore Rules המעודכנים פורסמו ונסה שוב.');
+      setHomeSearchError('שמירת הבית נכשלה. נסה לרענן את הדף ולשמור שוב.');
     }
   }
 
@@ -818,7 +888,7 @@ export default function App(){
                   void sendBuzz(child,testMode);
                 }}
               >
-                🔔 {canBuzzNow()&&child.homeStatus==='inside'?'צפצף':'בדיקת צפצוף'}
+                🔔 {canBuzzNow()&&child.homeStatus==='inside'?'צפצף':'בדיקת צפצוף 20 שנ׳'}
               </button>
               <button className="locate" onClick={e=>{e.stopPropagation();requestLocation(child)}}><LocateFixed/> רענן</button>
             </div>
@@ -1013,32 +1083,53 @@ function distanceMeters(lat1:number,lng1:number,lat2:number,lng2:number){
   return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-async function playAlarmTone(ctx:AudioContext,duration=6){
+async function playAlarmTone(ctx:AudioContext,duration=20){
   if(ctx.state==='suspended') await ctx.resume();
 
   const start=ctx.currentTime;
-  const gain=ctx.createGain();
-  gain.gain.setValueAtTime(0.0001,start);
-  gain.gain.exponentialRampToValueAtTime(0.9,start+0.05);
-  gain.connect(ctx.destination);
+  const end=start+duration;
 
-  const osc=ctx.createOscillator();
-  osc.type='square';
-  osc.frequency.setValueAtTime(880,start);
-  osc.connect(gain);
-  osc.start(start);
+  const compressor=ctx.createDynamicsCompressor();
+  compressor.threshold.setValueAtTime(-18,start);
+  compressor.knee.setValueAtTime(12,start);
+  compressor.ratio.setValueAtTime(8,start);
+  compressor.attack.setValueAtTime(0.003,start);
+  compressor.release.setValueAtTime(0.12,start);
+  compressor.connect(ctx.destination);
 
-  for(let t=0;t<duration;t+=0.45){
-    osc.frequency.setValueAtTime(t%0.9<0.45?880:660,start+t);
+  const master=ctx.createGain();
+  master.gain.setValueAtTime(0.0001,start);
+  master.connect(compressor);
+
+  // Repeating on/off alarm pattern. The level cannot exceed the device's own media volume.
+  for(let t=0;t<duration;t+=0.5){
+    const at=start+t;
+    master.gain.setValueAtTime(0.0001,at);
+    master.gain.exponentialRampToValueAtTime(1.0,Math.min(at+0.025,end));
+    master.gain.setValueAtTime(1.0,Math.min(at+0.34,end));
+    master.gain.exponentialRampToValueAtTime(0.0001,Math.min(at+0.46,end));
   }
 
-  gain.gain.setValueAtTime(0.9,start+duration-0.1);
-  gain.gain.exponentialRampToValueAtTime(0.0001,start+duration);
-  osc.stop(start+duration);
+  const frequencies=[740,980,1320];
+  const oscillators=frequencies.map((frequency,index)=>{
+    const osc=ctx.createOscillator();
+    const gain=ctx.createGain();
+    osc.type=index===2?'sawtooth':'square';
+    osc.frequency.setValueAtTime(frequency,start);
+    gain.gain.setValueAtTime(index===0?0.42:0.28,start);
+    osc.connect(gain);
+    gain.connect(master);
+    osc.start(start);
+    osc.stop(end);
+    return osc;
+  });
 
-  await new Promise(resolve=>setTimeout(resolve,duration*1000+150));
+  const vibrate=(navigator as Navigator & {vibrate?:(pattern:number|number[])=>boolean}).vibrate;
+  vibrate?.call(navigator,[500,120,500,120,500,120,1000,180,1000,180,1000]);
+
+  await new Promise(resolve=>setTimeout(resolve,duration*1000+200));
+  void oscillators;
 }
-
 
 function SettingsMapFocus({home}:{home:HomeConfig|null}){
   const map=useMap();
