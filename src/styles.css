@@ -1181,3 +1181,42 @@
   .codeInput{grid-template-columns:1fr!important}
   .codeInput button{width:100%!important}
 }
+
+
+/* ===== Legal pages ===== */
+.legalPage{min-height:100vh;background:#f6f8fb;color:#0f172a}
+.legalHeader{height:72px;background:#fff;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;padding:0 max(22px,calc((100vw - 900px)/2));position:sticky;top:0;z-index:20}
+.legalBrand{display:flex;align-items:center;gap:10px;color:#0f172a;text-decoration:none}
+.legalBrand b{font-size:18px}
+.legalLogo{width:36px;height:36px;border-radius:12px;background:#0f172a;display:flex;align-items:center;justify-content:center;gap:3px}
+.legalLogo i{width:4px;border-radius:5px;background:#38bdf8}
+.legalLogo i:nth-child(1){height:12px}
+.legalLogo i:nth-child(2){height:24px;background:#fff}
+.legalLogo i:nth-child(3){height:17px}
+.legalBack{color:#0369a1;text-decoration:none;font-weight:800;font-size:13px}
+.legalMain{width:min(900px,calc(100% - 32px));margin:0 auto;padding:44px 0 32px}
+.legalHero{text-align:right;margin-bottom:22px}
+.legalHero>span{font-size:12px;color:#0284c7;font-weight:900}
+.legalHero h1{font-size:38px;margin:5px 0 8px}
+.legalHero p{color:#64748b;font-size:15px;line-height:1.65;margin:0;max-width:720px}
+.legalHero small{display:block;margin-top:10px;color:#94a3b8}
+.legalCard{background:#fff;border:1px solid #e2e8f0;border-radius:24px;padding:30px;box-shadow:0 10px 35px #0f172a07}
+.legalCard section+section{border-top:1px solid #eef2f7;margin-top:24px;padding-top:22px}
+.legalCard h2{font-size:18px;margin:0 0 9px}
+.legalCard p{font-size:14px;line-height:1.85;color:#475569;margin:7px 0}
+.legalCard a{color:#0369a1}
+.legalFooter{width:min(900px,calc(100% - 32px));margin:0 auto;padding:4px 0 36px;display:flex;gap:18px;flex-wrap:wrap}
+.legalFooter a{font-size:12px;color:#64748b;text-decoration:none}
+.legalFooter a:hover{color:#0f172a}
+@media(max-width:720px){
+  .legalHeader{height:60px;padding:0 12px}
+  .legalBrand b{font-size:16px}
+  .legalLogo{width:32px;height:32px;border-radius:10px}
+  .legalMain{width:100%;padding:26px 12px 24px}
+  .legalHero h1{font-size:28px}
+  .legalHero p{font-size:13px}
+  .legalCard{border-radius:18px;padding:18px;box-shadow:none}
+  .legalCard h2{font-size:17px}
+  .legalCard p{font-size:13px;line-height:1.75}
+  .legalFooter{width:100%;padding:0 12px 28px}
+}
